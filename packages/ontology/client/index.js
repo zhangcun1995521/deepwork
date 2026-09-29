@@ -519,28 +519,6 @@ window.__ModuleLoader__.load({
       )
     }
 
-    /** The product mark: three nodes and the edges between them. */
-    function BrandMark(props) {
-      const size = props && props.size ? props.size : 22
-      return react.createElement(
-        'svg',
-        {
-          width: size,
-          height: size,
-          viewBox: '0 0 24 24',
-          fill: 'none',
-          stroke: 'currentColor',
-          strokeWidth: 1.7,
-          strokeLinecap: 'round',
-          'aria-hidden': true,
-        },
-        react.createElement('circle', { cx: 12, cy: 4.6, r: 2.1 }),
-        react.createElement('circle', { cx: 5.2, cy: 19, r: 2.1 }),
-        react.createElement('circle', { cx: 18.8, cy: 19, r: 2.1 }),
-        react.createElement('path', { d: 'M12 6.7v4.6M12 11.3 6.4 16.9M12 11.3l5.6 5.6' }),
-      )
-    }
-
     /** The product name, for the shell's brand-name slot. */
     function BrandName() {
       return react.createElement(
@@ -559,14 +537,15 @@ window.__ModuleLoader__.load({
     exports.inject = ['slots']
 
     /**
-     * Register the page, its nav row, and the product's own brand.
+     * Register the page, its nav row, and the product name.
      *
      * Everything goes through `ctx.slots.inject` so activation order does not matter:
      * the parent slot may not be declared yet when this plugin starts.
      *
-     * The brand slots are the shell's own, and the shipped build fills them. `priority`
-     * is the *shadowing rank* and the lowest renders — so the default 0 loses to a
-     * negative one, and equal priorities throw rather than silently pick a winner.
+     * The shipped mark is deliberately left alone. It is the product's own identity, and
+     * taking it over is a different act from renaming it — one that was not asked for and
+     * was reverted once. Only the *name* is claimed, and only through the slot that
+     * carries a name.
      */
     exports.apply = function apply(ctx) {
       ctx.slots.inject('main', () =>
@@ -574,20 +553,15 @@ window.__ModuleLoader__.load({
       )
       ctx.slots.inject('sidebar.panellist', () =>
         ctx.slots.register(
-          { name: 'sidebar.panellist', id: PANEL_ID, order: 0, label: () => 'DeepWork' },
+          { name: 'sidebar.panellist', id: PANEL_ID, order: 0, label: () => 'Ontology' },
           OntologyIcon,
         ),
       )
 
-      const shadow = { priority: -1 }
-      ctx.slots.inject('sidebar.brand.mark', () =>
-        ctx.slots.register({ name: 'sidebar.brand.mark', ...shadow }, BrandMark),
-      )
+      // `priority` is the shadowing rank and the lowest renders, so -1 wins over the
+      // shipped registration's default 0; equal ranks throw rather than pick silently.
       ctx.slots.inject('sidebar.brand.name', () =>
-        ctx.slots.register({ name: 'sidebar.brand.name', ...shadow }, BrandName),
-      )
-      ctx.slots.inject('conversation.hero.brand.mark', () =>
-        ctx.slots.register({ name: 'conversation.hero.brand.mark', ...shadow }, BrandMark),
+        ctx.slots.register({ name: 'sidebar.brand.name', priority: -1 }, BrandName),
       )
 
       // The window title comes from `DSH_CLIENT_TITLE`, baked into DSH's own frontend
