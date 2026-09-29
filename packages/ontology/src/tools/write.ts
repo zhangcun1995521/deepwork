@@ -17,7 +17,7 @@
  * "who tried and was turned away" is the question asked after something goes wrong, and
  * a log that only records successes cannot answer it.
  *
- * @module @deepwork/ontology/tools/write
+ * @module @zhangcun123/ontology/tools/write
  */
 
 import { writeFileSync } from 'node:fs'

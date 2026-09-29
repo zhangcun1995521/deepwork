@@ -22,7 +22,7 @@
  * the model sees a small, tight surface instead of forty near-identical tools whose
  * descriptions crowd out the task.
  *
- * @module @deepwork/ontology/tools/derive
+ * @module @zhangcun123/ontology/tools/derive
  */
 
 import type { FieldDecl, ObjectTypeDecl } from '../engine/schema.ts'

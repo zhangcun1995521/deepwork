@@ -1,4 +1,4 @@
-# @deepwork/ontology
+# @zhangcun123/ontology
 
 **Declare an enterprise world once, and derive the agent's tools and permissions from it.**
 
@@ -32,7 +32,7 @@ That gap is semantic, not mechanical, and it is what this package fills.
 ## Install
 
 ```sh
-dsh plugin --profile web add @deepwork/ontology
+dsh plugin --profile web add @zhangcun123/ontology
 ```
 
 Then point it at a domain pack — a directory holding `schema.yaml` and the instance

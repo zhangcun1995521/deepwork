@@ -19,7 +19,7 @@
  *     must not take the whole domain down, but it must never be silent either —
  *     every degradation is recorded in `warnings` for the caller to surface.
  *
- * @module @deepwork/ontology/engine/schema
+ * @module @zhangcun123/ontology/engine/schema
  */
 
 import { readFileSync } from 'node:fs'

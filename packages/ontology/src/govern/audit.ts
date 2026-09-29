@@ -9,7 +9,7 @@
  * Formatting is separated from appending so the shape of a record is testable without
  * touching a disk.
  *
- * @module @deepwork/ontology/govern/audit
+ * @module @zhangcun123/ontology/govern/audit
  */
 
 import { mkdirSync, appendFileSync } from 'node:fs'

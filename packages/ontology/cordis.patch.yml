@@ -10,7 +10,7 @@
 
 - insert:
     - id: deepwork-ontology
-      name: '@deepwork/ontology'
+      name: '@zhangcun123/ontology'
       config:
         # A domain pack is data, so it is configured rather than compiled in. With
         # nothing set the plugin loads no domain and says so, instead of silently

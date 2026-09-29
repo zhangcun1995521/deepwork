@@ -1,6 +1,6 @@
 # Example domain: project delivery
 
-A domain pack for [`@deepwork/ontology`](../..), and the thing to point a demo at.
+A domain pack for [`@zhangcun123/ontology`](../..), and the thing to point a demo at.
 
 **Entirely synthetic.** Invented customers, invented people, invented projects. Nothing
 here came from anywhere real.

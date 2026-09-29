@@ -17,7 +17,7 @@
  * declared directory — all deny. The direction is deliberate: a permission bug that
  * denies is a bug report, one that allows is an incident.
  *
- * @module @deepwork/ontology/govern/permission
+ * @module @zhangcun123/ontology/govern/permission
  */
 
 import { isAbsolute, relative, resolve } from 'node:path'

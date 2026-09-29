@@ -1,5 +1,5 @@
 {
-  "name": "@deepwork/ontology",
+  "name": "@zhangcun123/ontology",
   "version": "0.1.0",
   "description": "Schema-driven ontology engine for DeepWork: declare an enterprise world once, and derive the agent's tool surface and permissions from it.",
   "license": "MIT",

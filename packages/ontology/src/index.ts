@@ -1,11 +1,11 @@
 /**
- * @deepwork/ontology — the plugin.
+ * @zhangcun123/ontology — the plugin.
  *
  * Loads one domain pack and registers the tool surface that pack declares. Nothing
  * here knows a business concept: it decides what to load, says clearly what it could
  * not load, and stays out of the way.
  *
- * @module @deepwork/ontology
+ * @module @zhangcun123/ontology
  */
 
 import { join } from 'node:path'

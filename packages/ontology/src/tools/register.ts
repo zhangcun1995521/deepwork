@@ -15,7 +15,7 @@
  * take the others down with it, and the rejection has to be reported rather than
  * swallowed — the same failure policy the engine follows.
  *
- * @module @deepwork/ontology/tools/register
+ * @module @zhangcun123/ontology/tools/register
  */
 
 import type { OntologyGraph } from '../engine/graph.ts'

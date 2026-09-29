@@ -17,7 +17,7 @@
  * name silently produces a self-loop, which is how a wrong edge gets into the graph and
  * then into an answer.
  *
- * @module @deepwork/ontology/engine/graph
+ * @module @zhangcun123/ontology/engine/graph
  */
 
 import { readFileSync, readdirSync } from 'node:fs'
