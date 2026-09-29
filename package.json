@@ -1,0 +1,14 @@
+{
+  "name": "deepwork",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DeepWork — an enterprise AI workspace built on DeepSeek Harness (DSH). Adds the enterprise ontology and governance layer DSH does not ship.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dsh": "dsh"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh": "0.1.7-rc.2"
+  }
+}

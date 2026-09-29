@@ -1,0 +1,16 @@
+# Build scripts are deliberately not run.
+#
+# pnpm blocks dependency build scripts by default, and every working DSH install on
+# this machine was made that way. The install fails without this setting: `koffi`
+# falls back to compiling itself from source, which needs CMake. Setting every entry
+# to false records the decision explicitly instead of leaving pnpm's placeholder.
+#
+# Trade-off accepted: `koffi` ships no native binding here, and the Windows
+# Application Control policy blocks it from loading at runtime anyway. Whether the
+# fs/subprocess tools that depend on it work is verified in milestone 2, not assumed.
+allowBuilds:
+  '@deepseek-ai/dsh-subprocess-local': false
+  '@google/genai': false
+  koffi: false
+  node-pty: false
+  protobufjs: false

@@ -1,0 +1,24 @@
+{
+  "name": "@deepwork/probe",
+  "version": "0.1.0",
+  "description": "Minimal DSH plugin probe: proves a third-party package is resolved, mounted, and able to register on the tool registry.",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "cordis.patch.yml"
+  ],
+  "engines": {
+    "dsh": "^0.1.7-rc.2"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

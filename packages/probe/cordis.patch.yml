@@ -1,0 +1,16 @@
+# The composition layer this bundle contributes.
+#
+# A package that declares `dsh.bundle.patch` becomes a *profile layer*: the DSH
+# profile engine reads this file and applies it after the bundles that precede
+# it. This is what turns a package from "installed but inert" into something the
+# product can install and manage — the plugin manager refuses any package whose
+# manifest lacks `dsh.bundle`.
+#
+# Rows name the package **by its bare package name**, never by a relative path.
+# Bare names resolve through Node's ESM resolution from the profile, which is
+# where the plugin manager installed us; a relative path would resolve beside
+# this file, inside the package, and would not match the installed layout.
+
+- insert:
+    - id: deepwork-probe
+      name: '@deepwork/probe'
