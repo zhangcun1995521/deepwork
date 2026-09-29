@@ -1,0 +1,22 @@
+version: "1.0"
+
+# Fixture domain for the relation guard: one relation declared Beta -> Alpha, and an
+# instance of Alpha carrying a field with that relation's name. A field alone must
+# not fabricate an edge whose direction the schema never declared — that is how a
+# self-loop gets into a graph and then into an answer.
+
+object_types:
+  Alpha:
+    primary_key: alpha_id
+    required_fields: [alpha_id]
+    file_location: objects/alphas/A-*.yaml
+
+  Beta:
+    primary_key: beta_id
+    required_fields: [beta_id]
+    file_location: objects/betas/B-*.yaml
+
+link_types:
+  points_at:
+    from: Beta
+    to: Alpha

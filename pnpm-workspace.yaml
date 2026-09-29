@@ -1,16 +1,37 @@
+# Workspace members. `packages/probe` is the plugin-route smoke test;
+# `packages/ontology` is the schema-driven engine.
+packages:
+  - 'packages/*'
+
 # Build scripts are deliberately not run.
 #
 # pnpm blocks dependency build scripts by default, and every working DSH install on
-# this machine was made that way. The install fails without this setting: `koffi`
-# falls back to compiling itself from source, which needs CMake. Setting every entry
-# to false records the decision explicitly instead of leaving pnpm's placeholder.
-#
-# Trade-off accepted: `koffi` ships no native binding here, and the Windows
-# Application Control policy blocks it from loading at runtime anyway. Whether the
-# fs/subprocess tools that depend on it work is verified in milestone 2, not assumed.
+# this machine was made that way. Running them fails: `koffi` tries to compile itself
+# from source, which needs CMake. Setting every entry to false records the decision
+# explicitly instead of leaving pnpm's generated placeholder.
 allowBuilds:
   '@deepseek-ai/dsh-subprocess-local': false
   '@google/genai': false
   koffi: false
   node-pty: false
   protobufjs: false
+
+# Pin koffi to the last release whose native binding Windows Smart App Control accepts.
+#
+# koffi ships its binary in a version-locked platform package (`@koromix/koffi-win32-x64`),
+# so overriding `koffi` pulls the matching binary. Verified on this machine:
+#
+#   @koromix/koffi-win32-x64@3.1.1  ->  loads
+#   @koromix/koffi-win32-x64@3.3.2  ->  "An Application Control policy has blocked this file"
+#
+# Smart App Control (VerifiedAndReputablePolicyState = 0x1) judges each binary
+# individually, so a newer koffi is blocked until it earns reputation. A blocked
+# binding takes the whole agent runtime down: `dsh headless` fails at boot, and a
+# real turn would fail once session persistence spawns its worker. All of
+# fs-local, subprocess-local, session-persistence-jsonl and sandbox-windows-acl
+# depend on koffi, so there is no way around it.
+#
+# This is a workaround for a machine-level policy, not a design choice. Revisit when
+# 3.3.x earns reputation, or if Smart App Control is switched off.
+overrides:
+  koffi: 3.1.1

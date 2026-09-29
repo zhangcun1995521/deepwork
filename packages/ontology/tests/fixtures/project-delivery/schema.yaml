@@ -1,0 +1,85 @@
+version: "1.0"
+
+# Fixture domain: project delivery. Deliberately unrelated to the reference
+# implementation's testing domain — its only job is to prove the engine reads a
+# world it has never seen.
+#
+# `via` appears below wherever the field carrying a relation is named for the fact
+# rather than for the relation: `belongs_to` reads `customer`, `accountable` reads
+# `owner`, `reported_on` reads `project`. `owns` needs no `via` because its field
+# already carries the relation's name. Without `via`, every one of those fields would
+# have had to be renamed after its relation — and a name that does not match is
+# silently worth zero edges.
+
+object_types:
+  Customer:
+    primary_key: customer_id
+    required_fields: [customer_id, name]
+    file_location: objects/customers/CUST-*.yaml
+    written_by: [analyst]
+    fields:
+      customer_id: { type: string, required: true }
+      name: { type: string, required: true }
+      owns: { type: array, items: ref, to: Project, description: Projects delivered for this customer }
+
+  Project:
+    primary_key: project_id
+    required_fields: [project_id, customer, owner, status]
+    file_location: objects/projects/P-*.yaml
+    written_by: [analyst, system]
+    fields:
+      project_id: { type: string, required: true }
+      customer: { type: ref, to: Customer, required: true }
+      owner: { type: ref, to: Person, required: true }
+      status: { type: enum, values: [OnTrack, AtRisk, Delayed], required: true }
+
+  Person:
+    primary_key: employee_id
+    required_fields: [employee_id, name]
+    file_location: objects/people/EMP-*.yaml
+    written_by: [analyst]
+    fields:
+      employee_id: { type: string, required: true }
+      name: { type: string, required: true }
+
+  Issue:
+    # No explicit primary_key: this type pins the `required_fields[0]` convention.
+    required_fields: [issue_id, project, summary]
+    file_location: objects/issues/ISSUE-*.yaml
+    written_by: [analyst]
+    fields:
+      issue_id: { type: string, required: true }
+      project: { type: ref, to: Project, required: true }
+      summary: { type: string, required: true }
+
+link_types:
+  owns:
+    from: Customer
+    to: Project
+    description: A project this customer has commissioned.
+  belongs_to:
+    from: Project
+    to: Customer
+    via: customer
+    description: The customer a project is delivered for.
+  accountable:
+    from: Project
+    to: Person
+    via: owner
+    description: Who is accountable for delivery.
+  reported_on:
+    from: Issue
+    to: Project
+    via: project
+    description: The project an issue was raised against.
+
+functions:
+  at_risk_projects:
+    use: filter_by
+    on: Project
+    where: { status: AtRisk }
+
+action_types:
+  flag_risk:
+    use: create
+    target: Issue

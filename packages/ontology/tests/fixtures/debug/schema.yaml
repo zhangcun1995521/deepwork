@@ -1,0 +1,32 @@
+version: "1.0"
+
+# Fixture domain: defect triage. Shares no vocabulary with project-delivery or with
+# the reference implementation. Its only purpose is to pin down that the engine
+# reads a domain it has never seen without any code change.
+
+object_types:
+  BugReport:
+    primary_key: bug_id
+    required_fields: [bug_id, title, severity]
+    file_location: objects/bugs/BUG-*.yaml
+    written_by: [triage]
+    fields:
+      bug_id: { type: string, required: true }
+      title: { type: string, required: true }
+      severity: { type: enum, values: [low, medium, high], required: true }
+      verdict_by: { type: ref, to: Engineer }
+
+  Engineer:
+    primary_key: engineer_id
+    required_fields: [engineer_id, name]
+    file_location: objects/engineers/ENG-*.yaml
+    written_by: [triage]
+    fields:
+      engineer_id: { type: string, required: true }
+      name: { type: string, required: true }
+
+link_types:
+  verdict_by:
+    from: BugReport
+    to: Engineer
+    description: Who gave the triage verdict.

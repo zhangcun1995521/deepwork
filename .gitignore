@@ -5,3 +5,9 @@ dist/
 *.tsbuildinfo
 .DS_Store
 LOCAL_CONTEXT.md
+
+# Build output of the TypeScript packages. Never committed: `prepack` rebuilds it,
+# so a published tarball always matches its source and there is no "did you
+# remember to rebuild?" failure mode. `packages/probe/lib` is deliberately not
+# covered — that one is hand-written source, not generated.
+packages/*/lib/

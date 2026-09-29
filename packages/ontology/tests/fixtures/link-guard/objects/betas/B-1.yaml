@@ -1,0 +1,3 @@
+beta_id: B-1
+# Correctly typed: Beta is the declared source of `points_at`, so this one counts.
+points_at: A-1

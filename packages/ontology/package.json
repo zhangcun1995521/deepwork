@@ -1,0 +1,36 @@
+{
+  "name": "@deepwork/ontology",
+  "version": "0.1.0",
+  "description": "Schema-driven ontology engine for DeepWork: declare an enterprise world once, and derive the agent's tool surface and permissions from it.",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "engines": {
+    "dsh": "^0.1.7-rc.2"
+  },
+  "scripts": {
+    "test": "node --test",
+    "build": "tsc -p tsconfig.json",
+    "prepack": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "js-yaml": "^4.2.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}

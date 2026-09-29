@@ -1,0 +1,49 @@
+version: "1.0"
+
+# Fixture domain: deliberately malformed, one problem per declaration, to pin the
+# failure policy. Every defect here must surface as a warning rather than silently
+# degrading a query result — except a broken schema file, which must throw.
+
+object_types:
+  Widget:
+    primary_key: widget_id
+    required_fields: [widget_id]
+    file_location: objects/widgets/W-*.yaml
+    fields:
+      widget_id: { type: string, required: true }
+      mounts: { type: ref, to: Gadget }
+
+  Gadget:
+    # No `file_location`: there is nowhere to look for instances.
+    required_fields: [gadget_id]
+
+  Sprocket:
+    # `file_location` names a directory that does not exist on disk.
+    primary_key: sprocket_id
+    file_location: objects/sprockets/S-*.yaml
+
+  Doohickey:
+    # Neither `primary_key` nor `required_fields`, so identity can only come from
+    # the filename.
+    file_location: objects/doohickeys/D-*.yaml
+
+link_types:
+  mounts:
+    from: Widget
+    to: Gadget
+  missing_target:
+    # Missing `to`: the declaration cannot describe a directed edge.
+    from: Widget
+  unknown_target:
+    # Target type was never declared, so every edge resolves to nothing.
+    from: Widget
+    to: Nonexistent
+  phantom_source:
+    # Source type was never declared, so this relation can never match an object.
+    from: Phantom
+    to: Widget
+  unwired:
+    # Both types are declared and Widget has instances, but no instance carries
+    # `unwired`, so this relation can never produce an edge.
+    from: Widget
+    to: Widget

@@ -1,0 +1,4 @@
+# A schema document must be a mapping. This one is a list, which is the shape a
+# wrongly-pointed root directory tends to produce.
+- object_types
+- link_types

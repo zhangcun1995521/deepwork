@@ -1,0 +1,4 @@
+bug_id: BUG-1
+title: Export truncates rows beyond 65536
+severity: high
+verdict_by: ENG-ADA

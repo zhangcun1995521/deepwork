@@ -1,0 +1,4 @@
+alpha_id: A-1
+# `points_at` is declared Beta -> Alpha. This instance is an Alpha, so the field must
+# be ignored: it may not produce an Alpha -> Alpha edge.
+points_at: A-2
