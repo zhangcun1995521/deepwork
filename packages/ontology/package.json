@@ -11,6 +11,34 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./engine": {
+      "types": "./lib/types/engine/graph.d.ts",
+      "default": "./lib/engine/graph.js"
+    },
+    "./engine/schema": {
+      "types": "./lib/types/engine/schema.d.ts",
+      "default": "./lib/engine/schema.js"
+    },
+    "./tools": {
+      "types": "./lib/types/tools/derive.d.ts",
+      "default": "./lib/tools/derive.js"
+    },
+    "./tools/write": {
+      "types": "./lib/types/tools/write.d.ts",
+      "default": "./lib/tools/write.js"
+    },
+    "./tools/register": {
+      "types": "./lib/types/tools/register.d.ts",
+      "default": "./lib/tools/register.js"
+    },
+    "./govern/permission": {
+      "types": "./lib/types/govern/permission.d.ts",
+      "default": "./lib/govern/permission.js"
+    },
+    "./govern/audit": {
+      "types": "./lib/types/govern/audit.d.ts",
+      "default": "./lib/govern/audit.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

@@ -8,7 +8,7 @@ here came from anywhere real.
 ## What it contains
 
 Five object types — `Customer`, `Project`, `Person`, `Issue`, `Document` — six relations,
-and **seven declared functions**. Eighteen instances in total, arranged so that one
+and **seven declared functions**. Sixteen instances in total, arranged so that one
 project (`P-2026-001`) carries a plausible risk story and another shares its accountable
 owner, which is the kind of cross-project conflict a single-project view would miss.
 

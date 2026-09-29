@@ -93,12 +93,29 @@ To allow writes, say who may write. The role map is the gate:
 export DEEPWORK_ONTOLOGY_ROLES='[{"prefix":"session-","role":"delivery-lead"}]'
 ```
 
+## The workspace UI
+
+```sh
+cd apps/workspace && node server.mjs      # http://127.0.0.1:4180
+```
+
+Point it at a domain and it shows what the engine derived from it: the tool definitions
+with the JSON Schema of every argument, the object types with who may write them, and the
+relations with the field each one reads. Put a role map in the `roles` box and the write
+tool appears; leave it empty and the page explains why it does not.
+
+No DSH, no API key, no build step — the engine is a pure library over a directory of
+YAML, so this is a viewer over a JSON document. Only domains named in `DEEPWORK_DOMAINS`
+(or the bundled example) are readable, because a path arriving from a browser is an
+arbitrary-read request.
+
 ## What is in here
 
 | Path | What it is |
 |---|---|
 | `packages/ontology` | the plugin: engine, tool derivation, governance |
 | `packages/ontology/examples/project-delivery` | a complete synthetic domain to point at |
+| `apps/workspace` | the workspace UI: point it at a domain and see the derived tool surface |
 | `packages/probe` | the smallest possible plugin, kept as the smoke test for the plugin route |
 | `PROJECT_STATE.md` | the working record: decisions, verified facts, environment pitfalls |
 

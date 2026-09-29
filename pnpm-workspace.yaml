@@ -1,7 +1,10 @@
 # Workspace members. `packages/probe` is the plugin-route smoke test;
-# `packages/ontology` is the schema-driven engine.
+# `packages/ontology` is the schema-driven engine; `apps/workspace` is the UI, which
+# consumes the engine through its published subpath exports rather than by reaching
+# into its source.
 packages:
   - 'packages/*'
+  - 'apps/*'
 
 # Build scripts are deliberately not run.
 #
