@@ -482,17 +482,33 @@ window.__ModuleLoader__.load({
         body = react.createElement(Domain, { data: state.data })
       }
 
+      // `main` is a clipped column, so the page owns its own scrolling — the shape the
+      // shipped panels use: a full-height box that scrolls, with the content constrained
+      // inside it. Without `height` and `overflow` the content is simply cut off, which
+      // is exactly how this was found.
       return react.createElement(
         'div',
-        { style: { padding: '22px 26px 60px', maxWidth: 1020 } },
+        {
+          'data-deepwork-page': '',
+          style: {
+            boxSizing: 'border-box',
+            height: '100%',
+            overflow: 'auto',
+            padding: '22px 26px 60px',
+          },
+        },
         react.createElement(
-          'p',
-          { style: { ...MUTED, fontSize: 12.5, margin: 0 } },
-          'What the engine derived from this domain: the tools the agent would be given, ' +
-            'and the permissions gating them.',
+          'div',
+          { style: { maxWidth: 1020 } },
+          react.createElement(
+            'p',
+            { style: { ...MUTED, fontSize: 12.5, margin: 0 } },
+            'What the engine derived from this domain: the tools the agent would be given, ' +
+              'and the permissions gating them.',
+          ),
+          controls,
+          body,
         ),
-        controls,
-        body,
       )
     }
 
