@@ -27,6 +27,10 @@ window.__ModuleLoader__.load({
     /** Shared by the nav row and the page; also the `main` slot key. */
     const PANEL_ID = 'deepwork-ontology'
 
+    /** The product's own name, and the shell's build-time name it replaces. */
+    const PRODUCT_NAME = 'DeepWork'
+    const PRODUCT_TITLE_FROM = 'DeepSeek Harness'
+
     /** Where the host half serves this domain. */
     const DOMAIN_URL = '/deepwork/domain'
 
@@ -515,14 +519,54 @@ window.__ModuleLoader__.load({
       )
     }
 
-    /** Which services this plugin needs before it activates. */
+    /** The product mark: three nodes and the edges between them. */
+    function BrandMark(props) {
+      const size = props && props.size ? props.size : 22
+      return react.createElement(
+        'svg',
+        {
+          width: size,
+          height: size,
+          viewBox: '0 0 24 24',
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: 1.7,
+          strokeLinecap: 'round',
+          'aria-hidden': true,
+        },
+        react.createElement('circle', { cx: 12, cy: 4.6, r: 2.1 }),
+        react.createElement('circle', { cx: 5.2, cy: 19, r: 2.1 }),
+        react.createElement('circle', { cx: 18.8, cy: 19, r: 2.1 }),
+        react.createElement('path', { d: 'M12 6.7v4.6M12 11.3 6.4 16.9M12 11.3l5.6 5.6' }),
+      )
+    }
+
+    /** The product name, for the shell's brand-name slot. */
+    function BrandName() {
+      return react.createElement(
+        'span',
+        { style: { fontWeight: 600, letterSpacing: '-0.2px' } },
+        'DeepWork',
+      )
+    }
+
+    /**
+     * Which services this plugin needs before it activates.
+     *
+     * `inject` is informational for a client plugin; the registrations below are what
+     * actually wait, each through `ctx.slots.inject`.
+     */
     exports.inject = ['slots']
 
     /**
-     * Register the page and its nav row.
+     * Register the page, its nav row, and the product's own brand.
      *
-     * Both go through `ctx.slots.inject` so activation order does not matter: the parent
-     * slot may not be declared yet when this plugin starts.
+     * Everything goes through `ctx.slots.inject` so activation order does not matter:
+     * the parent slot may not be declared yet when this plugin starts.
+     *
+     * The brand slots are the shell's own, and the shipped build fills them. `priority`
+     * is the *shadowing rank* and the lowest renders — so the default 0 loses to a
+     * negative one, and equal priorities throw rather than silently pick a winner.
      */
     exports.apply = function apply(ctx) {
       ctx.slots.inject('main', () =>
@@ -530,10 +574,36 @@ window.__ModuleLoader__.load({
       )
       ctx.slots.inject('sidebar.panellist', () =>
         ctx.slots.register(
-          { name: 'sidebar.panellist', id: PANEL_ID, order: 0, label: () => 'Ontology' },
+          { name: 'sidebar.panellist', id: PANEL_ID, order: 0, label: () => 'DeepWork' },
           OntologyIcon,
         ),
       )
+
+      const shadow = { priority: -1 }
+      ctx.slots.inject('sidebar.brand.mark', () =>
+        ctx.slots.register({ name: 'sidebar.brand.mark', ...shadow }, BrandMark),
+      )
+      ctx.slots.inject('sidebar.brand.name', () =>
+        ctx.slots.register({ name: 'sidebar.brand.name', ...shadow }, BrandName),
+      )
+      ctx.slots.inject('conversation.hero.brand.mark', () =>
+        ctx.slots.register({ name: 'conversation.hero.brand.mark', ...shadow }, BrandMark),
+      )
+
+      // The window title comes from `DSH_CLIENT_TITLE`, baked into DSH's own frontend
+      // bundle at build time, and the shell rewrites the title on every session change.
+      // A one-shot assignment therefore loses the race — which is how this was found,
+      // and why the title is observed rather than set. Only the exact product string is
+      // replaced, so a session title in front of it is left intact. Rewriting the title
+      // fires the observer again, finds nothing to replace, and stops there.
+      const rewriteTitle = () => {
+        if (document.title.includes(PRODUCT_TITLE_FROM)) {
+          document.title = document.title.split(PRODUCT_TITLE_FROM).join(PRODUCT_NAME)
+        }
+      }
+      rewriteTitle()
+      const titleObserver = new MutationObserver(rewriteTitle)
+      titleObserver.observe(document.head, { childList: true, subtree: true, characterData: true })
     }
 
     return module.exports
