@@ -277,3 +277,62 @@ test('an empty result renders as an answer, not as silence', () => {
   assert.equal(nothing.total, 0)
   assert.equal(find.render({}, nothing), '(nothing matched)')
 })
+
+/** The shipped example is what a demo points at, so it must not drift out of validity. */
+const exampleDomain = (): string =>
+  fileURLToPath(new URL('../../examples/project-delivery', import.meta.url))
+
+test('the example domain loads clean and derives exactly the surface it declares', () => {
+  const graph = loadGraph(exampleDomain())
+  const { tools, warnings } = deriveTools(graph)
+
+  assert.deepEqual(graph.warnings, [])
+  assert.deepEqual(warnings, [])
+  assert.deepEqual(toolNamed(tools, 'ontology_query').parameters.properties?.mode?.enum, [
+    'at_risk_projects',
+    'projects_for_customer',
+    'open_issues_of',
+    'high_severity_open_issues',
+    'accountable_for',
+    'documents_about',
+    'find_projects',
+  ])
+})
+
+test('a list in `where` reads as "either of these"', () => {
+  const { tools } = deriveTools(loadGraph(exampleDomain()))
+
+  // `at_risk_projects` declares `where: { status: [AtRisk, Delayed] }`, so both the
+  // AtRisk project and the Delayed one qualify, and the OnTrack one does not.
+  assert.deepEqual(
+    run(toolNamed(tools, 'ontology_query'), { mode: 'at_risk_projects' })
+      .objects.map((object) => object.id)
+      .sort(),
+    ['P-2026-001', 'P-2026-003'],
+  )
+})
+
+test('a declared traversal narrows what it arrives at', () => {
+  const { tools } = deriveTools(loadGraph(exampleDomain()))
+
+  // `open_issues_of` runs `reported_on` backwards and carries `where: { status: open }`.
+  // The project has one closed issue, so the narrowing has to be doing the work.
+  const opened = run(toolNamed(tools, 'ontology_query'), {
+    mode: 'open_issues_of',
+    project_id: 'P-2026-001',
+  })
+  assert.deepEqual(opened.objects.map((object) => object.id).sort(), [
+    'ISSUE-101',
+    'ISSUE-102',
+    'ISSUE-103',
+  ])
+
+  // Without the narrowing the closed issue would come back too, so the reported edges
+  // have to stay consistent with the entities beside them.
+  assert.equal(opened.links.length, 3)
+  assert.deepEqual(
+    run(toolNamed(tools, 'ontology_links'), { relation: 'reported_on', from: 'ISSUE-104' })
+      .objects.map((object) => object.id),
+    ['P-2026-001'],
+  )
+})

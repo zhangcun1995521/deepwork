@@ -25,7 +25,7 @@ import { join } from 'node:path'
 
 import { load as loadYaml } from 'js-yaml'
 
-import { parseSchema, type OntologySchema } from './schema.ts'
+import { parseSchema, type LinkTypeDecl, type OntologySchema } from './schema.ts'
 
 /** One instance of a declared object type. */
 export interface OntologyObject {
@@ -104,25 +104,36 @@ function isMapping(value: unknown): value is Record<string, unknown> {
 function deriveLinks(objects: OntologyObject[], schema: OntologySchema): OntologyLink[] {
   // Index relations by the field that carries them, which is `via` when declared and
   // the relation's own name otherwise.
-  const byField = new Map([...schema.linkTypes.values()].map((link) => [link.field, link]))
+  //
+  // One field name can carry more than one relation: a document and an issue both point
+  // at their project through a field called `project`. So the index holds a list, and
+  // the object's own type decides which relation a field actually exercises. Keying by
+  // field name alone would let the last declaration silently displace the others, and
+  // the displaced relations would derive nothing at all.
+  const byField = new Map<string, LinkTypeDecl[]>()
+  for (const link of schema.linkTypes.values()) {
+    const sharing = byField.get(link.field)
+    if (sharing === undefined) byField.set(link.field, [link])
+    else sharing.push(link)
+  }
 
   const links: OntologyLink[] = []
   for (const object of objects) {
     for (const [field, value] of Object.entries(object.data)) {
-      const link = byField.get(field)
-      // The field must carry a declared relation, and this object's type must be
-      // that relation's declared source. See the module doc for why both halves
-      // are required.
-      if (link === undefined || link.from !== object.type) continue
-      for (const target of Array.isArray(value) ? value : [value]) {
-        if (typeof target !== 'string' || target.length === 0) continue
-        links.push({
-          type: link.name,
-          from: object.id,
-          fromType: object.type,
-          to: target,
-          toType: link.to,
-        })
+      for (const link of byField.get(field) ?? []) {
+        // This object's type must be the relation's declared source. See the module doc
+        // for why that half of the rule is not decoration.
+        if (link.from !== object.type) continue
+        for (const target of Array.isArray(value) ? value : [value]) {
+          if (typeof target !== 'string' || target.length === 0) continue
+          links.push({
+            type: link.name,
+            from: object.id,
+            fromType: object.type,
+            to: target,
+            toType: link.to,
+          })
+        }
       }
     }
   }

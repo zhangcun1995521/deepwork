@@ -1,0 +1,4 @@
+gamma_id: G-1
+# The same field name Beta uses, but Gamma is a different declared source, so the
+# relation it exercises is `also_points_at`.
+points_at: A-2

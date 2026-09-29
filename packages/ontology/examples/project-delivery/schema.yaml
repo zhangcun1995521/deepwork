@@ -1,0 +1,159 @@
+version: "1.0"
+
+# DeepWork example domain: project delivery.
+#
+# Synthetic throughout — invented customers, invented people, invented projects. It
+# exists to show what a domain pack looks like, and to be the thing a demo points at.
+#
+# Everything the agent can do with this domain is declared below. The tool surface is
+# derived from these declarations, and no code in this package knows what a project is.
+# Changing this file changes what the agent can ask; changing the code is not part of
+# the workflow.
+#
+# Two declaration features worth pointing out, because both are load-bearing here:
+#
+#   - `where` accepts a list, read as "either of these": `status: [AtRisk, Delayed]`.
+#   - a traversal may also carry `where`, which narrows what it arrives at. That is what
+#     makes "the open issues of this project" one declaration rather than two.
+
+object_types:
+  Customer:
+    primary_key: customer_id
+    required_fields: [customer_id, name]
+    file_location: objects/customers/CUST-*.yaml
+    written_by: [delivery-lead]
+    fields:
+      customer_id: { type: string, required: true }
+      name: { type: string, required: true }
+      industry: { type: string }
+      owns: { type: array, items: ref, to: Project, description: Projects commissioned by this customer }
+
+  Project:
+    primary_key: project_id
+    required_fields: [project_id, customer, owner, status]
+    file_location: objects/projects/P-*.yaml
+    written_by: [delivery-lead, system]
+    fields:
+      project_id: { type: string, required: true }
+      customer: { type: ref, to: Customer, required: true }
+      owner: { type: ref, to: Person, required: true, description: The person accountable for delivery }
+      status: { type: enum, values: [OnTrack, AtRisk, Delayed, Closed], required: true }
+      due_date: { type: string, required: false }
+      contracted_value_eur: { type: number }
+
+  Person:
+    primary_key: employee_id
+    required_fields: [employee_id, name]
+    file_location: objects/people/EMP-*.yaml
+    written_by: [delivery-lead]
+    fields:
+      employee_id: { type: string, required: true }
+      name: { type: string, required: true }
+      title: { type: string }
+
+  Issue:
+    primary_key: issue_id
+    required_fields: [issue_id, project, summary, severity, status]
+    file_location: objects/issues/ISSUE-*.yaml
+    written_by: [delivery-lead, engineer]
+    fields:
+      issue_id: { type: string, required: true }
+      project: { type: ref, to: Project, required: true }
+      assignee: { type: ref, to: Person }
+      summary: { type: string, required: true }
+      severity: { type: enum, values: [low, medium, high], required: true }
+      status: { type: enum, values: [open, closed], required: true }
+      raised_on: { type: string }
+
+  Document:
+    primary_key: document_id
+    required_fields: [document_id, project, title, kind]
+    file_location: objects/documents/DOC-*.yaml
+    written_by: [delivery-lead]
+    fields:
+      document_id: { type: string, required: true }
+      project: { type: ref, to: Project, required: true }
+      title: { type: string, required: true }
+      kind: { type: enum, values: [meeting-notes, status-report, requirement], required: true }
+      # A short verbatim excerpt, so a claim in a report can be traced to a source
+      # rather than asserted.
+      excerpt: { type: string }
+
+link_types:
+  owns:
+    from: Customer
+    to: Project
+  belongs_to:
+    from: Project
+    to: Customer
+    via: customer
+  accountable:
+    from: Project
+    to: Person
+    via: owner
+  reported_on:
+    from: Issue
+    to: Project
+    via: project
+  assigned_to:
+    from: Issue
+    to: Person
+    via: assignee
+  about:
+    from: Document
+    to: Project
+    via: project
+
+functions:
+  at_risk_projects:
+    description: Projects that are AtRisk or Delayed — the shortlist for a delivery review.
+    use: filter_by
+    on: Project
+    where: { status: [AtRisk, Delayed] }
+
+  projects_for_customer:
+    description: Every project commissioned by one customer.
+    use: filter_by
+    on: Project
+    by: customer
+
+  open_issues_of:
+    description: Issues still open against a given project, which is what a risk review turns on.
+    use: traverse
+    relation: reported_on
+    direction: incoming
+    by: project_id
+    where: { status: open }
+
+  high_severity_open_issues:
+    description: Open issues of high severity anywhere — the escalation list.
+    use: filter_by
+    on: Issue
+    where: { status: open, severity: high }
+
+  accountable_for:
+    description: The person accountable for delivering a given project.
+    use: traverse
+    relation: accountable
+    by: project_id
+
+  documents_about:
+    description: Documents attached to a given project, so a claim can be traced to a source.
+    use: traverse
+    relation: about
+    direction: incoming
+    by: project_id
+
+  find_projects:
+    description: Substring search across project fields.
+    use: search
+    on: Project
+    by: query
+
+action_types:
+  record_issue:
+    use: create
+    target: Issue
+  update_project_status:
+    use: update
+    target: Project

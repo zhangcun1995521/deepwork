@@ -1,9 +1,15 @@
 version: "1.0"
 
-# Fixture domain for the relation guard: one relation declared Beta -> Alpha, and an
-# instance of Alpha carrying a field with that relation's name. A field alone must
-# not fabricate an edge whose direction the schema never declared — that is how a
-# self-loop gets into a graph and then into an answer.
+# Fixture domain for relation derivation edge cases. Two rules are pinned here, and
+# both have bitten this project:
+#
+#   1. A field may only produce an edge in the direction its relation declares. An
+#      instance of Alpha carrying a field named `points_at` must not fabricate an
+#      Alpha -> Alpha edge when `points_at` is declared Beta -> Alpha.
+#   2. A field name does not identify a relation. Gamma and Beta both reach Alpha
+#      through a field called `points_at`, under two different relations, and both must
+#      derive. Keying relations by field name alone would let one silently displace the
+#      other.
 
 object_types:
   Alpha:
@@ -16,7 +22,17 @@ object_types:
     required_fields: [beta_id]
     file_location: objects/betas/B-*.yaml
 
+  Gamma:
+    primary_key: gamma_id
+    required_fields: [gamma_id]
+    file_location: objects/gammas/G-*.yaml
+
 link_types:
   points_at:
     from: Beta
     to: Alpha
+  also_points_at:
+    # Same carrying field as `points_at`, different source type.
+    from: Gamma
+    to: Alpha
+    via: points_at

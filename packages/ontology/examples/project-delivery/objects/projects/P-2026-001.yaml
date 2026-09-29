@@ -1,0 +1,6 @@
+project_id: P-2026-001
+customer: CUST-NORTHWIND
+owner: EMP-LIN
+status: AtRisk
+due_date: "2026-11-30"
+contracted_value_eur: 480000

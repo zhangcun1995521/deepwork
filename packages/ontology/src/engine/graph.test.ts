@@ -65,6 +65,22 @@ test('an edge may not cross a type the relation did not declare', () => {
   assert.equal(linksOf(graph, 'points_at', 'A-1').length, 0)
 })
 
+test('one field name can carry two relations, told apart by the source type', () => {
+  const graph = loadGraph(fixture('link-guard'))
+
+  // Beta and Gamma both reach Alpha through a field named `points_at`, under two
+  // different relations. Keying relations by field name alone would let one displace
+  // the other and the displaced one would derive nothing.
+  assert.deepEqual(
+    linksOf(graph, 'points_at').map(edge),
+    ['Beta:B-1->Alpha:A-1'],
+  )
+  assert.deepEqual(
+    linksOf(graph, 'also_points_at').map(edge),
+    ['Gamma:G-1->Alpha:A-2'],
+  )
+})
+
 test('queries filter by field and resolve edges to objects', () => {
   const graph = loadGraph(fixture('project-delivery'))
 

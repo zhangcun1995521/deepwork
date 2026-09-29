@@ -313,6 +313,38 @@ function matchesField(object: OntologyObject, field: string, wanted: string): bo
   return String(value) === wanted
 }
 
+/**
+ * True when the field equals any of several wanted values.
+ *
+ * A declaration writes this as a list — `where: { status: [AtRisk, Delayed] }` — which
+ * reads as "either of these", the way a person would state it. The alternative would be
+ * two near-identical declarations for one question.
+ */
+function matchesAnyField(
+  object: OntologyObject,
+  field: string,
+  wanted: readonly string[],
+): boolean {
+  return wanted.some((value) => matchesField(object, field, value))
+}
+
+/**
+ * Apply a declaration's fixed narrowing to one instance: every clause must hold.
+ *
+ * Shared by the two kinds of declaration that narrow. A filtered declaration narrows
+ * what it starts from; a traversal narrows what it arrives at, which is what makes
+ * "the open issues of this project" one declaration rather than two.
+ */
+function matchesWhere(object: OntologyObject, where: Record<string, unknown>): boolean {
+  for (const [field, wanted] of Object.entries(where)) {
+    const holds = Array.isArray(wanted)
+      ? matchesAnyField(object, field, wanted.map(String))
+      : matchesField(object, field, String(wanted))
+    if (!holds) return false
+  }
+  return true
+}
+
 /** True when any scalar field contains the query, case-insensitively. */
 function matchesQuery(object: OntologyObject, query: string): boolean {
   const needle = query.toLowerCase()
@@ -502,15 +534,24 @@ function deriveDispatcher(
           const object = graph.byId.get(key)
           if (object !== undefined) reached.push(object)
         }
-        return pack(modeName, reached, links, maxResults)
+        // `where` narrows what the traversal arrives at, so a declaration can ask for
+        // the open issues of a project rather than every issue ever raised on it.
+        const filtered = reached.filter((object) => matchesWhere(object, mode.where))
+        // Keep the reported edges consistent with the reported entities; an edge to
+        // something filtered out would contradict the result it sits beside.
+        const kept = new Set(filtered.map((object) => object.key))
+        const keptLinks = links.filter((link) =>
+          mode.incoming
+            ? kept.has(`${link.fromType}:${link.from}`)
+            : kept.has(`${link.toType}:${link.to}`),
+        )
+        return pack(modeName, filtered, keptLinks, maxResults)
       }
 
       const type = requireType(graph, mode.on ?? '')
       let objects = graph.byType.get(type.name) ?? []
 
-      for (const [field, wanted] of Object.entries(mode.where)) {
-        objects = objects.filter((object) => matchesField(object, field, String(wanted)))
-      }
+      objects = objects.filter((object) => matchesWhere(object, mode.where))
       if (mode.param !== undefined) {
         const value = optionalString(args, mode.param)
         if (value === undefined) {

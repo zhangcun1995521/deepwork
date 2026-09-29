@@ -1,0 +1,7 @@
+issue_id: ISSUE-103
+project: P-2026-001
+assignee: EMP-LIN
+summary: Customer network team has not opened the required firewall range
+severity: high
+status: open
+raised_on: "2026-09-18"
