@@ -39,13 +39,15 @@
       "types": "./lib/types/govern/audit.d.ts",
       "default": "./lib/govern/audit.js"
     },
+    "./client": "./client/index.js",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/**/*.js",
     "lib/types/**/*.d.ts",
     "cordis.patch.yml",
-    "examples/**"
+    "examples/**",
+    "client/**"
   ],
   "engines": {
     "dsh": "^0.1.7-rc.2"
@@ -53,6 +55,9 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
     }
   },
   "scripts": {
