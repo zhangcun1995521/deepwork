@@ -1,0 +1,18 @@
+# The composition layer this bundle contributes.
+#
+# Declaring `dsh.bundle.patch` is what turns this package from an inert dependency into
+# a *profile layer*: the profile engine reads this file and applies it, and DSH's own
+# plugin manager will install and manage the package instead of refusing it.
+#
+# The row names the package by its bare name. Bare names resolve through the profile —
+# which is where the plugin manager installs bundles — whereas a relative path would
+# resolve beside this file, inside the package, and would not match that layout.
+
+- insert:
+    - id: deepwork-ontology
+      name: '@deepwork/ontology'
+      config:
+        # A domain pack is data, so it is configured rather than compiled in. With
+        # nothing set the plugin loads no domain and says so, instead of silently
+        # registering no tools.
+        ontologyRoot: !!js process.env.DEEPWORK_ONTOLOGY_ROOT ?? ''

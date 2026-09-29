@@ -74,10 +74,40 @@ link_types:
     description: The project an issue was raised against.
 
 functions:
+  # Between them these four cover every primitive and both parameter shapes: a fixed
+  # narrowing with no argument, a field-valued argument, a traversal, and a search.
   at_risk_projects:
+    description: Projects currently flagged AtRisk.
     use: filter_by
     on: Project
     where: { status: AtRisk }
+
+  projects_for_customer:
+    description: Every project delivered for one customer.
+    use: filter_by
+    on: Project
+    by: customer
+
+  blockers_of:
+    description: Issues raised against a given project.
+    use: traverse
+    relation: reported_on
+    # `reported_on` runs Issue -> Project, but this question starts at the project,
+    # so the walk runs against the declared direction.
+    direction: incoming
+    by: project_id
+
+  project_of_blocker:
+    description: The project an issue was raised against.
+    use: traverse
+    relation: reported_on
+    by: issue_id
+
+  find_projects:
+    description: Substring search across a project's text fields.
+    use: search
+    on: Project
+    by: query
 
 action_types:
   flag_risk:

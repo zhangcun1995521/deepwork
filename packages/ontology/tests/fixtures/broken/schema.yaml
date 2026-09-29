@@ -47,3 +47,37 @@ link_types:
     # `unwired`, so this relation can never produce an edge.
     from: Widget
     to: Widget
+
+functions:
+  # One defect per declaration, so each rejection path is pinned by its own warning.
+  # The last entry is sound and must survive, which proves the others were dropped
+  # individually rather than the whole block being abandoned.
+  missing_use:
+    on: Widget
+  unknown_use:
+    use: explode
+    on: Widget
+  filter_without_on:
+    use: filter_by
+  filter_on_undeclared:
+    use: filter_by
+    on: Nonexistent
+  traverse_without_relation:
+    use: traverse
+    by: from_id
+  traverse_unknown_relation:
+    use: traverse
+    relation: not_a_relation
+    by: from_id
+  search_without_by:
+    use: search
+    on: Widget
+  bad_direction:
+    use: traverse
+    relation: mounts
+    direction: sideways
+    by: from_id
+  sound_mode:
+    description: Every widget.
+    use: filter_by
+    on: Widget
