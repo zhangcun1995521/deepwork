@@ -15,12 +15,6 @@ importers:
         specifier: 0.1.7-rc.2
         version: 0.1.7-rc.2(a9469415dd81c5f35bcaf43e91023545)
 
-  apps/workspace:
-    dependencies:
-      '@zhangcun123/ontology':
-        specifier: workspace:*
-        version: link:../../packages/ontology
-
   packages/ontology:
     dependencies:
       js-yaml:
