@@ -26,11 +26,24 @@ import {
   type QueryResult,
   type ToolArgs,
 } from './derive.ts'
+import { deriveWriteTools, type WriteOptions } from './write.ts'
 
 /** Content the runtime shows the model, in the shape DSH expects from `render`. */
 export interface TextContent {
   type: 'text'
   text: string
+}
+
+/**
+ * What the runtime tells a tool about the call it is serving.
+ *
+ * Only the identity is taken. The adapter deliberately does not model the rest of the
+ * runtime's execution context — a wider surface here would tie this package to
+ * release details it does not need and cannot test.
+ */
+export interface ExecutionContext {
+  /** The agent the call is attributed to. */
+  agent?: { id?: string }
 }
 
 /** A tool definition in the shape the runtime's `register` accepts. */
@@ -44,7 +57,7 @@ export interface RegisterableTool {
     schema: JsonSchemaNode
     render: (args: ToolArgs, value: unknown) => TextContent[]
   }
-  execute: (args: ToolArgs) => Promise<QueryResult> | QueryResult
+  execute: (args: ToolArgs, exec?: ExecutionContext) => Promise<QueryResult> | QueryResult
 }
 
 /** The slice of a runtime tool registry this adapter needs. */
@@ -62,6 +75,15 @@ export interface RegistrationResult {
   warnings: string[]
 }
 
+/** Options for registering a domain's surface. */
+export interface RegisterOptions extends DeriveOptions {
+  /**
+   * Write options. Omitting them registers no write tool at all; see the note in
+   * `registerOntologyTools`.
+   */
+  writes?: WriteOptions
+}
+
 /** Render an unknown thrown value as a single-line message. */
 function reason(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -72,18 +94,26 @@ function reason(error: unknown): string {
  *
  * @param registry - The runtime's tool registry.
  * @param graph - Loaded domain graph.
- * @param options - Result caps, forwarded to the derivation.
+ * @param options - Result caps, plus write options when the write surface is wanted.
  */
 export function registerOntologyTools(
   registry: ToolRegistry,
   graph: OntologyGraph,
-  options: DeriveOptions = {},
+  options: RegisterOptions = {},
 ): RegistrationResult {
-  const { tools, warnings } = deriveTools(graph, options)
+  const reads = deriveTools(graph, options)
+  // Writes are opt-in. A deployment that has not said who may write gets no write tool
+  // at all, rather than one that refuses every call — an always-refusing tool only
+  // teaches the model to try something else.
+  const writes =
+    options.writes === undefined
+      ? { tools: [], warnings: [] }
+      : deriveWriteTools(graph, options.writes)
+
   const registered: string[] = []
   const failed: string[] = []
 
-  for (const tool of tools) {
+  for (const tool of [...reads.tools, ...writes.tools]) {
     try {
       registry.register({
         name: tool.name,
@@ -95,7 +125,10 @@ export function registerOntologyTools(
           // the derivation framework-free is what puts this conversion in one place.
           render: (args, value) => [{ type: 'text', text: tool.render(args, value as QueryResult) }],
         },
-        execute: (args) => tool.execute(args),
+        // The caller's identity reaches the tool from here and nowhere else; a read
+        // tool simply ignores it.
+        execute: (args, exec) =>
+          tool.execute(args, exec?.agent?.id === undefined ? {} : { agentId: exec.agent.id }),
       })
       registered.push(tool.name)
     } catch (error) {
@@ -103,5 +136,5 @@ export function registerOntologyTools(
     }
   }
 
-  return { registered, failed, warnings }
+  return { registered, failed, warnings: [...reads.warnings, ...writes.warnings] }
 }

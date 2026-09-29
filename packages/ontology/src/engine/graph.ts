@@ -301,3 +301,26 @@ export function targetsOf(
   }
   return targets
 }
+
+/**
+ * Re-read the domain from disk into the same graph object.
+ *
+ * A write has to become visible to the tools that read, and those tools closed over
+ * this object at load time. Reloading into a fresh graph would leave them looking at a
+ * stale snapshot, so the reload happens in place and identity is preserved.
+ *
+ * A consequence worth naming: a domain edited by some other process between calls is
+ * also picked up here, which is usually what you want but does mean "the graph" is
+ * only as fresh as the last load or write.
+ *
+ * @param graph - Graph to refresh, mutated in place.
+ */
+export function refreshGraph(graph: OntologyGraph): void {
+  const reloaded = loadGraph(graph.root)
+  graph.schema = reloaded.schema
+  graph.objects = reloaded.objects
+  graph.links = reloaded.links
+  graph.byType = reloaded.byType
+  graph.byId = reloaded.byId
+  graph.warnings = reloaded.warnings
+}

@@ -8,7 +8,11 @@
  * @module @deepwork/ontology
  */
 
+import { join } from 'node:path'
+
 import { loadGraph } from './engine/graph.ts'
+import { appendAuditLine, formatAuditLine, type AuditEntry } from './govern/audit.ts'
+import type { RoleRule } from './govern/permission.ts'
 import { registerOntologyTools, type ToolRegistry } from './tools/register.ts'
 
 /** Plugin name, as the runtime's loader sees it in logs and error messages. */
@@ -27,6 +31,14 @@ export interface Config {
   ontologyRoot?: string
   /** Maximum entities in one tool result. */
   maxResults?: number
+  /**
+   * Prefix-to-role map for callers. Empty means the write tool is not registered at
+   * all: a deployment that has not said who may write gets no write surface, rather
+   * than one that refuses every call.
+   */
+  roles?: RoleRule[]
+  /** Where write attempts are recorded. Defaults to `<ontologyRoot>/.audit.jsonl`. */
+  auditLog?: string
 }
 
 /** The slice of the runtime context this plugin uses. */
@@ -61,12 +73,30 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
 
   // Throws on an unreadable schema; see the doc comment above.
   const graph = loadGraph(ontologyRoot)
-  const options = config.maxResults === undefined ? {} : { maxResults: config.maxResults }
-  const { registered, failed, warnings } = registerOntologyTools(ctx.tools, graph, options)
+
+  // Writes are opt-in, and the gate is the role map rather than a separate flag: a
+  // deployment that has not said who may write gets no write tool.
+  const roles = config.roles ?? []
+  const auditLog = config.auditLog ?? join(ontologyRoot, '.audit.jsonl')
+  const writes =
+    roles.length === 0
+      ? undefined
+      : {
+          roles,
+          audit: (entry: AuditEntry): void => appendAuditLine(auditLog, formatAuditLine(entry)),
+        }
+
+  const { registered, failed, warnings } = registerOntologyTools(ctx.tools, graph, {
+    ...(config.maxResults === undefined ? {} : { maxResults: config.maxResults }),
+    ...(writes === undefined ? {} : { writes }),
+  })
 
   const summary =
     `loaded "${graph.root}": ${graph.objects.length} entities, ${graph.links.length} relations, ` +
-    `${graph.schema.objectTypes.size} types, ${registered.length} tools registered`
+    `${graph.schema.objectTypes.size} types, ${registered.length} tools registered; ` +
+    (writes === undefined
+      ? 'writes disabled (no roles configured)'
+      : `writes enabled, audited to ${auditLog}`)
   if (ctx.logger?.info !== undefined) ctx.logger.info(summary)
   else process.stderr.write(`[${name}] ${summary}\n`)
 

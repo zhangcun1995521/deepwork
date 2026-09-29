@@ -76,6 +76,15 @@ export interface QueryResult {
   truncated: boolean
 }
 
+/** Who is asking, as far as the runtime can tell. */
+export interface CallContext {
+  /**
+   * Identity of the calling agent, when the runtime supplies one. Read tools ignore
+   * it; a write tool needs it to decide whose authority it is acting under.
+   */
+  agentId?: string
+}
+
 /** A tool the adapter can register on the runtime's tool registry. */
 export interface DerivedToolSpec {
   name: string
@@ -90,8 +99,10 @@ export interface DerivedToolSpec {
    * Run the tool. Throws for a bad request (unknown type, missing argument) so the
    * runtime reports it as an error; a legitimate "nothing matched" is a successful
    * result with an empty list.
+   *
+   * `call` is optional so a read tool can ignore it entirely.
    */
-  execute: (args: ToolArgs) => QueryResult
+  execute: (args: ToolArgs, call?: CallContext) => QueryResult | Promise<QueryResult>
 }
 
 /** Everything the derivation produced, plus what it refused to produce and why. */
@@ -198,7 +209,7 @@ function renderValue(value: unknown, limit: number): string {
  * Relations are listed separately because an entity's related ids are often the
  * answer, and burying them in the field list makes them easy to miss.
  */
-function renderResult(
+export function renderResult(
   value: QueryResult,
   limit: number,
   primaryKeyOf: (type: string) => string | undefined,
@@ -250,7 +261,7 @@ const LINK_SCHEMA: JsonSchemaNode = {
 }
 
 /** JSON Schema shared by every tool's canonical return value. */
-const RESULT_SCHEMA: JsonSchemaNode = {
+export const RESULT_SCHEMA: JsonSchemaNode = {
   type: 'object',
   properties: {
     mode: { type: 'string', description: 'The entry that produced this result.' },

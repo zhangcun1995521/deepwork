@@ -11,3 +11,8 @@ LOCAL_CONTEXT.md
 # remember to rebuild?" failure mode. `packages/probe/lib` is deliberately not
 # covered — that one is hand-written source, not generated.
 packages/*/lib/
+
+# The write trail a local run leaves beside a domain. A domain pack is data, not part
+# of this repository, but a fixture used as one would otherwise drop this next to the
+# source.
+.audit.jsonl

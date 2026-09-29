@@ -16,3 +16,12 @@
         # nothing set the plugin loads no domain and says so, instead of silently
         # registering no tools.
         ontologyRoot: !!js process.env.DEEPWORK_ONTOLOGY_ROOT ?? ''
+        # Who may write is the gate on the write tool: an empty role map means the
+        # tool is not registered at all, so an unconfigured deployment is a read-only
+        # one rather than a permissive one. Roles are matched by agent id prefix.
+        # Quoted because a bare scalar would let YAML read the ` : ` in the ternary as
+        # a mapping separator.
+        roles: !!js 'process.env.DEEPWORK_ONTOLOGY_ROLES ? JSON.parse(process.env.DEEPWORK_ONTOLOGY_ROLES) : []'
+        # Write attempts are recorded here, refusals included. Defaults to
+        # `.audit.jsonl` beside the domain.
+        auditLog: !!js process.env.DEEPWORK_ONTOLOGY_AUDIT || null
