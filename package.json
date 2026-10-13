@@ -9,7 +9,7 @@
     "dsh": "dsh",
     "demo": "node packages/ontology/scripts/show-derivation.ts packages/ontology/examples/project-delivery",
     "demo:lifecycle": "node packages/ontology/scripts/show-derivation.ts packages/ontology/tests/fixtures/review-delivery --roles [{\"prefix\":\"session-\",\"role\":\"engineer\"}]",
-    "validate": "node packages/ontology/scripts/validate-domain.ts packages/ontology/examples/project-delivery packages/ontology/tests/fixtures/review-delivery --role session-=delivery-lead"
+    "validate": "node packages/ontology/scripts/validate-domain.ts packages/ontology/examples/project-delivery packages/ontology/examples/lessons packages/ontology/tests/fixtures/review-delivery --role session-=delivery-lead"
   },
   "devDependencies": {
     "@deepseek-ai/dsh": "0.1.7-rc.2"

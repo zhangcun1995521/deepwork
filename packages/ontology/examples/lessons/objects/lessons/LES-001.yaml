@@ -1,0 +1,10 @@
+lesson_id: LES-001
+status: verified
+kind: review_discipline
+rule: >-
+  An interface change and the tests that cover it belong in the same change; split across two,
+  the second one is what gets dropped when the first is abandoned.
+applies_to: artifact:pull_request
+source_kind: review
+source_ref: REV-2026-0413
+applied_count: 4

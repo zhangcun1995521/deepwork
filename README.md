@@ -108,7 +108,7 @@ objects
 
 That second run is a governance model in fifteen lines, and not one of them was written by
 hand: it is the domain, read back. The enforcement behind those lines is described under
-[Governance](#governance) and checked by 142 tests.
+[Governance](#governance) and checked by 149 tests.
 
 ## What it looks like when an agent uses it
 
@@ -140,7 +140,7 @@ Working and demonstrated, not finished.
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-142 tests in total.
+149 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
@@ -217,6 +217,7 @@ domain to check, so it is reported as a failing domain rather than as a diagnost
 |---|---|
 | `packages/ontology` | the plugin: engine, tool derivation, governance |
 | `packages/ontology/examples/project-delivery` | a complete synthetic domain to point at |
+| `packages/ontology/examples/lessons` | the experience loop as a domain: a lesson arrives as a `candidate`, reads return only what somebody else upheld, and counting applications is a grant apart from writing one |
 | `packages/probe` | the smallest possible plugin, kept as the smoke test for the plugin route |
 | `tools/fde` | the FDE toolkit: qualify a use case before anything gets built (Python, runs standalone) |
 | `PROJECT_STATE.md` | the working record: decisions, verified facts, environment pitfalls |

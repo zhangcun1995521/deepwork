@@ -1,0 +1,92 @@
+version: "1.0"
+
+# A lesson base: experience an agent wrote down, usable only once somebody else upheld it.
+#
+# The subject is different from every other domain here — this one is about what the team
+# learned rather than about what the team is building — and the shape is the point. A lesson
+# arrives as a `candidate`; a candidate is not what a reader gets back, because reads default
+# to `verified`. Moving one to the other needs a verdict from somebody other than the mover,
+# and the verdict's producer is established from the platform's own record of who wrote it, not
+# from a field the caller filled in. The counter is separate from authorship for the same
+# reason it is separate anywhere else: counting that a lesson was applied is not writing one.
+#
+# None of that is code. It is the four declarations below, and the engine that reads them was
+# not changed to read this domain.
+
+object_types:
+  Lesson:
+    primary_key: lesson_id
+    required_fields: [lesson_id, status, rule]
+    file_location: objects/lessons/LES-*.yaml
+    # Wider than the transition's `by`, on purpose and necessarily: being allowed to write the
+    # type is not the same as being allowed to vouch for it. A curator has to be here to make
+    # the move at all, and the narrower grant below is what stops them from making this one.
+    # A contributor may open a lesson and may not promote it. Neither is in `Verdict`, which is
+    # why no single role can vouch for its own work — the structural separation holds before
+    # the independence check ever runs.
+    written_by: [contributor, curator]
+    lifecycle:
+      field: status
+      initial: candidate
+      default_state: verified
+      states: [candidate, verified, rejected]
+      transitions:
+        verify:
+          from: [candidate]
+          to: verified
+          by: [curator]
+          requires_review:
+            type: Verdict
+            link: lesson
+            field: outcome
+            pass: uphold
+        # A candidate can also be turned down. No second pair of eyes for that direction: the
+        # expensive mistake is publishing something nobody checked, not declining to publish.
+        reject:
+          from: [candidate]
+          to: rejected
+          by: [curator]
+    fields:
+      lesson_id: { type: string, required: true }
+      status: { type: enum, values: [candidate, verified, rejected], required: true }
+      rule: { type: string, required: true }
+      kind: { type: string }
+      applies_to: { type: string }
+      # What this came from, so a reader can weigh it. Two flat fields rather than one nested
+      # mapping: a relation reads a field name, and a nested shape is one no relation can
+      # address.
+      source_kind: { type: string }
+      source_ref: { type: string }
+      # Recording that a lesson was applied belongs to whoever applied it, not to whoever wrote
+      # it — and not to whoever vouched for it either. Three grants, three answers.
+      applied_count: { type: integer, increment_by: [practitioner] }
+
+  # A verdict is an ordinary object. The engine does not know it is a judgement; the domain
+  # says so, and the `requires_review` above names the three fields that carry it.
+  Verdict:
+    primary_key: verdict_id
+    required_fields: [verdict_id, lesson, outcome]
+    file_location: objects/verdicts/VER-*.yaml
+    written_by: [verifier]
+    fields:
+      verdict_id: { type: string, required: true }
+      lesson: { type: string, required: true }
+      outcome: { type: enum, values: [uphold, overturn], required: true }
+      basis: { type: string }
+
+link_types:
+  judged:
+    from: Verdict
+    to: Lesson
+    via: lesson
+    description: The lesson a verdict is about.
+
+functions: {}
+
+action_types:
+  # The same move as the transition, offered as a named action. It exists to make the point
+  # that an action is a shell over the write path: calling this does not take a shortcut past
+  # the verdict requirement, and it lands in the trail under the action's own name.
+  uphold_lesson:
+    use: update
+    target: Lesson

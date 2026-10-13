@@ -1,0 +1,8 @@
+lesson_id: LES-003
+status: rejected
+kind: tooling
+rule: >-
+  Prefer the newer generation of the harness for every new profile.
+applies_to: artifact:profile
+source_kind: retrospective
+source_ref: RETRO-2026-Q1

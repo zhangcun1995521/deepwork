@@ -1,0 +1,8 @@
+lesson_id: LES-002
+status: candidate
+kind: review_discipline
+rule: >-
+  A retry loop needs a ceiling that is asserted, not a ceiling that is documented.
+applies_to: artifact:integration_client
+source_kind: review
+source_ref: REV-2026-0511

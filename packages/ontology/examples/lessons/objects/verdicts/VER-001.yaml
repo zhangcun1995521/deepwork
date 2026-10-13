@@ -1,0 +1,6 @@
+verdict_id: VER-001
+lesson: LES-001
+outcome: uphold
+basis: >-
+  Reproduced on two changes this quarter, and the second was abandoned rather than merged,
+  which is the failure the rule describes.
