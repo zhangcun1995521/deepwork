@@ -74,6 +74,11 @@ export interface QueryResult {
   /** How many are in `objects`. */
   returned: number
   truncated: boolean
+  /**
+   * Entities left out because they are not in the type's default state, when the caller
+   * did not ask for a state. Present so the answer never quietly narrows itself.
+   */
+  excludedByState?: number
 }
 
 /** Who is asking, as far as the runtime can tell. */
@@ -182,6 +187,7 @@ function pack(
   objects: OntologyObject[],
   links: OntologyLink[],
   maxResults: number,
+  excludedByState?: number,
 ): QueryResult {
   const capped = objects.slice(0, maxResults)
   return {
@@ -191,6 +197,7 @@ function pack(
     total: objects.length,
     returned: capped.length,
     truncated: objects.length > capped.length,
+    ...(excludedByState === undefined ? {} : { excludedByState }),
   }
 }
 
@@ -233,6 +240,12 @@ export function renderResult(
   if (value.truncated) {
     lines.push(`(showing ${value.returned} of ${value.total})`)
   }
+  if (value.excludedByState !== undefined && value.excludedByState > 0) {
+    lines.push(
+      `(${value.excludedByState} more ${value.excludedByState === 1 ? 'entity is' : 'entities are'} ` +
+        'in another state; pass state="*" to include them)',
+    )
+  }
   return lines.join('\n')
 }
 
@@ -268,6 +281,11 @@ export const RESULT_SCHEMA: JsonSchemaNode = {
     objects: { type: 'array', items: OBJECT_SCHEMA },
     links: { type: 'array', items: LINK_SCHEMA },
     total: { type: 'number', description: 'Matches before the cap.' },
+    excludedByState: {
+      type: 'number',
+      description:
+        "Entities hidden by the type's default state. Ask for a state, or \"*\" for all of them.",
+    },
     returned: { type: 'number', description: 'Entries in `objects`.' },
     truncated: {
       type: 'boolean',
@@ -623,6 +641,10 @@ export function deriveTools(graph: OntologyGraph, options: DeriveOptions = {}): 
           ),
           value: stringNode('The exact value `field` must equal.'),
           query: stringNode('Substring to look for, case-insensitive, across text fields.'),
+          state: stringNode(
+            "Lifecycle state to include. Omitted, the type's default state applies; pass \"*\" for " +
+              "every state. Ignored for types that declare no lifecycle.",
+          ),
         },
         required: ['type'],
       },
@@ -633,6 +655,7 @@ export function deriveTools(graph: OntologyGraph, options: DeriveOptions = {}): 
         const field = optionalString(args, 'field')
         const value = optionalString(args, 'value')
         const query = optionalString(args, 'query')
+        const requestedState = optionalString(args, 'state')
 
         if (field !== undefined && value === undefined) {
           throw new Error('argument "value" is required when "field" is given')
@@ -644,6 +667,31 @@ export function deriveTools(graph: OntologyGraph, options: DeriveOptions = {}): 
         }
         if (query !== undefined) {
           objects = objects.filter((object) => matchesQuery(object, query))
+        }
+
+        // The default state is where "use only what somebody vouched for" lives. Stated
+        // rather than silent: whatever the filter removes is counted and reported, because
+        // an answer that hides half the world without saying so is worse than a slower one.
+        const lifecycle = type.lifecycle
+        if (lifecycle !== undefined && lifecycle.defaultState !== undefined) {
+          const wanted =
+            requestedState === '*' ? undefined : (requestedState ?? lifecycle.defaultState)
+          if (wanted !== undefined) {
+            const before = objects.length
+            objects = objects.filter((object) => {
+              const value = object.data[lifecycle.field]
+              const state = typeof value === 'string' && value.length > 0 ? value : lifecycle.initial
+              return state === wanted
+            })
+            const excluded = before - objects.length
+            if (excluded > 0 && requestedState === undefined) {
+              return pack('find', objects, [], maxResults, excluded)
+            }
+          }
+        } else if (requestedState !== undefined && requestedState !== '*') {
+          throw new Error(
+            `"${type.name}" declares no lifecycle, so there is no state "${requestedState}" to ask for`,
+          )
         }
         return pack('find', objects, [], maxResults)
       },

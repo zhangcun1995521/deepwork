@@ -6,16 +6,32 @@
  * mounted reads exactly like a policy that works, right up until someone checks.
  */
 import assert from 'node:assert/strict'
+import { cpSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { test } from 'node:test'
-import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { apply, type OntologyContext } from './index.ts'
 import type { RegisterableTool, RuntimeToolCall } from './tools/register.ts'
 
-const FIXTURE = resolve(fileURLToPath(import.meta.url), '../../tests/fixtures/project-delivery')
+const FIXTURE_SOURCE = resolve(fileURLToPath(import.meta.url), '../../tests/fixtures/project-delivery')
+
+/**
+ * A throwaway copy of the fixture, because mounting the plugin has a side effect: the
+ * read-only refusal is a guard decision, and a guard decision is audited. Pointing that
+ * at the committed fixture would leave a growing trail inside the repository and, worse,
+ * make the suite race its own file copies.
+ */
+function scratchFixture(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'deepwork-index-'))
+  cpSync(FIXTURE_SOURCE, dir, { recursive: true })
+  return dir
+}
 
 interface Harness {
+  /** The scratch domain this harness mounted, so tests can resolve paths inside it. */
+  root: string
   ctx: OntologyContext
   registered: string[]
   mounted?: (call: RuntimeToolCall) => string | undefined
@@ -25,6 +41,7 @@ interface Harness {
 /** A context that records what the plugin does, without a runtime or a domain on disk. */
 function harness(): Harness {
   const state: Harness = {
+    root: '',
     registered: [],
     logs: [],
     ctx: undefined as unknown as OntologyContext,
@@ -50,7 +67,11 @@ function harness(): Harness {
 
 function mount(roles: { prefix: string; role: string }[]): Harness {
   const h = harness()
-  apply(h.ctx, { ontologyRoot: FIXTURE, roles })
+  const root = scratchFixture()
+  h.root = root
+  // The audit sink is named explicitly rather than defaulted, so a future default cannot
+  // quietly start writing into the fixture again.
+  apply(h.ctx, { ontologyRoot: root, roles, auditLog: join(root, 'audit.jsonl') })
   return h
 }
 
@@ -68,8 +89,8 @@ test('with no roles, a write is refused as read-only', () => {
 
 test('the analyst role may write inside a declared directory and nowhere else', () => {
   const h = mount([{ prefix: 'analyst-', role: 'analyst' }])
-  const inside = resolve(FIXTURE, 'objects/customers/CUST-NEW.yaml')
-  const outside = resolve(FIXTURE, '../elsewhere.md')
+  const inside = resolve(h.root, 'objects/customers/CUST-NEW.yaml')
+  const outside = resolve(h.root, '../elsewhere.md')
 
   assert.equal(h.mounted?.({ name: 'write', arguments: { path: inside }, agent: { id: 'analyst-1' } }), undefined)
   assert.match(
@@ -82,7 +103,7 @@ test('a role the schema never names cannot write anything', () => {
   const h = mount([{ prefix: 'ghost-', role: 'ghost' }])
   const refusal = h.mounted?.({
     name: 'write',
-    arguments: { path: resolve(FIXTURE, 'objects/customers/CUST-NEW.yaml') },
+    arguments: { path: resolve(h.root, 'objects/customers/CUST-NEW.yaml') },
     agent: { id: 'ghost-1' },
   })
   assert.match(refusal ?? '', /not named in written_by/)
@@ -92,7 +113,7 @@ test('a shell redirect outside the domain is refused once the guard is mounted',
   const h = mount([{ prefix: 'analyst-', role: 'analyst' }])
   const refusal = h.mounted?.({
     name: 'pwsh',
-    arguments: { command: `echo pwned > ${resolve(FIXTURE, '../pwned.md')}` },
+    arguments: { command: `echo pwned > ${resolve(h.root, '../pwned.md')}` },
     agent: { id: 'analyst-1' },
   })
   assert.match(refusal ?? '', /redirects into/)

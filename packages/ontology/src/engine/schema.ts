@@ -44,6 +44,15 @@ export interface FieldDecl {
   values?: unknown[]
   /** Target object type when the field holds a reference. */
   to?: string
+  /**
+   * Roles permitted to *increment* this field, when it is a counter.
+   *
+   * Kept apart from `written_by` on purpose: who may record that knowledge was used is
+   * not who may author it. In the reference implementation the counter was bumped by a
+   * write that bypassed the permission layer entirely; here the increment is a declared
+   * right like any other, and refusing it is a normal refusal.
+   */
+  incrementBy?: string[]
   [key: string]: unknown
 }
 
@@ -138,7 +147,11 @@ function asFieldMap(value: unknown): Record<string, FieldDecl> {
   if (!isMapping(value)) return {}
   const fields: Record<string, FieldDecl> = {}
   for (const [name, decl] of Object.entries(value)) {
-    fields[name] = isMapping(decl) ? (decl as FieldDecl) : {}
+    const field = isMapping(decl) ? (decl as FieldDecl) : {}
+    // Normalised so the write path reads one spelling, and so a field that is not a
+    // counter has no increment rights to find by accident.
+    const incrementBy = asStringList(field.increment_by)
+    fields[name] = incrementBy === undefined ? field : { ...field, incrementBy }
   }
   return fields
 }

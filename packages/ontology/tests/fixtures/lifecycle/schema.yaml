@@ -1,0 +1,36 @@
+version: "1.0"
+
+# Fixture domain for declared state and declared counters. Deliberately tiny: the point
+# is the declarations, not the world they describe.
+#
+# `written_by` is wider than the transition's `by` on purpose: being allowed to write
+# the type is not the same as being allowed to vouch for it. An editor may edit a claim
+# and may not promote it; that difference is the whole point and it needs a fixture where
+# the two grants differ to be testable at all.
+#
+# `default_state: verified` is what makes "use only what somebody vouched for" the
+# default for reads — and the read tools are expected to say how many they left out.
+
+object_types:
+  Pattern:
+    primary_key: pattern_id
+    required_fields: [pattern_id, status, claim]
+    file_location: objects/patterns/PAT-*.yaml
+    written_by: [curator, editor]
+    lifecycle:
+      field: status
+      initial: candidate
+      states: [candidate, verified]
+      default_state: verified
+      transitions:
+        verify: { from: [candidate], to: verified, by: [curator] }
+    fields:
+      pattern_id: { type: string, required: true }
+      status: { type: string, required: true }
+      claim: { type: string, required: true }
+      # A counter, and who may move it: an executor records that knowledge was used, the
+      # curator owns the claim itself.
+      hits: { type: integer, increment_by: [executor] }
+
+link_types: {}
+functions: {}

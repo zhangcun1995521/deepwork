@@ -131,6 +131,14 @@ export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): D
             'Field values to write. Relation fields name the related entity ids. The identity field ' +
             'is set from `id` and cannot be overridden here.',
         },
+        increment: {
+          type: 'object',
+          description:
+            'Whole-number deltas added to declared counters, e.g. { "hits": 1 }. A field is a ' +
+            'counter when the domain declares increment_by on it, and that declaration — not ' +
+            'written_by — decides who may increment. Counters can also be set outright through ' +
+            '`data` by a role that may write the type.',
+        },
       },
       required: ['type', 'id', 'data'],
     },
@@ -177,8 +185,59 @@ export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): D
 
       // Id safety is separate from authority on purpose: the id comes from the model
       // and becomes part of a path, so it is checked before anything is resolved.
+      // Whether this call authors anything. A call that only moves a counter does not:
+      // its grant is `increment_by`, checked below per field. Passing the distinction in,
+      // rather than letting one check answer both questions, is what keeps "who may
+      // record usage" and "who may author the claim" from collapsing into one gate.
+      // Counter increments. Declared per field rather than granted wholesale, because who
+      // may record that knowledge was used is not who may author it: an executor accrues
+      // the count, a curator owns the claim. The reference implementation bumped its
+      // counter from code that wrote the file directly; here it is a write like any other,
+      // covered by the refusals above and the audit below.
+      const increments: [string, number][] = []
+      const rawIncrement = (args as Record<string, unknown>).increment
+      if (rawIncrement !== undefined && !isMapping(rawIncrement)) {
+        deny('invalid-increment', '"increment" must be an object of field names to whole-number deltas')
+      }
+      // Bound to a mapping of its own so the loop below reads a value the compiler can see
+      // the shape of, rather than one it has to trust.
+      const incrementsArg: Record<string, unknown> = isMapping(rawIncrement) ? rawIncrement : {}
+      if (rawIncrement !== undefined) {
+        for (const [field, delta] of Object.entries(incrementsArg)) {
+          const step =
+            typeof delta === 'number' && Number.isInteger(delta) && delta !== 0 ? delta : 0
+          if (step === 0) {
+            deny('invalid-increment', `the increment for "${field}" must be a non-zero whole number`)
+          }
+          const by = type.fields[field]?.incrementBy ?? []
+          if (type.fields[field] === undefined || by.length === 0) {
+            deny(
+              'not-a-counter',
+              `"${field}" is not a declared counter of ${type.name} (declare increment_by on the field)`,
+            )
+          }
+          if (attemptedRole === undefined || !by.includes(attemptedRole)) {
+            deny(
+              'increment-not-permitted',
+              `incrementing "${field}" requires one of [${by.join(', ')}]; caller resolved to ` +
+                `${attemptedRole === undefined ? 'no role' : `"${attemptedRole}"`}`,
+            )
+          }
+          increments.push([field, step])
+        }
+      }
+
+      // A call that carries nothing but counter increments is the one case where
+      // `written_by` is the wrong question: recording that knowledge was used is not
+      // authoring it. Every other call — including one that writes nothing but names no
+      // counters — is authorised as content, so an empty `data` cannot be used to slip
+      // past the type's grant.
+      const counterOnly = Object.keys(data).length === 0 && increments.length > 0
+
       const decision: Permission = isSafeId(id)
-        ? authoriseWrite(type, graph.root, file, call?.agentId, roles)
+        ? authoriseWrite(type, graph.root, file, call?.agentId, roles, {
+            requireWrittenBy: !counterOnly,
+          })
         : {
             allowed: false,
             reason: 'unsafe-id',
@@ -215,6 +274,11 @@ export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): D
         [type.primaryKey]: id,
       }
 
+      for (const [field, delta] of increments) {
+        const current = merged[field]
+        merged[field] = (typeof current === 'number' ? current : 0) + delta
+      }
+
       const missing = type.requiredFields.filter((field) => {
         const value = merged[field]
         return value === undefined || value === null || String(value).length === 0
@@ -239,8 +303,10 @@ export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): D
         file,
         outcome: 'allowed',
         // Names, never values: an audit trail that copies domain content into a second
-        // file widens the surface that content can leak from.
-        fields: Object.keys(data),
+        // file widens the surface that content can leak from. Counter fields are named
+        // here too — "which counter moved, and by whom" is half of what the trail is for,
+        // and an increment otherwise leaves an entry that says nothing moved.
+        fields: [...Object.keys(data), ...increments.map(([field]) => field)],
       })
 
       const written = graph.byId.get(`${type.name}:${id}`)

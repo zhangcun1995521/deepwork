@@ -261,3 +261,166 @@ test('the write tool offers a closed enum of declared types', () => {
     'Issue',
   ])
 })
+
+// ── the lifecycle and the counters, on the write path itself ────────────────────
+// The pure decisions are covered in `govern/lifecycle.test.ts`; these say the write
+// tool actually consults them, which is a different claim.
+
+const CURATOR: readonly RoleRule[] = [{ prefix: 'curator-session-', role: 'curator' }]
+const EDITOR: readonly RoleRule[] = [{ prefix: 'editor-session-', role: 'editor' }]
+const EXECUTOR: readonly RoleRule[] = [{ prefix: 'exec-session-', role: 'executor' }]
+
+test('a promotion the schema grants is written, and audited as a write', () => {
+  const root = scratchDomain('lifecycle')
+  const graph = loadGraph(root)
+  const { entries, audit } = collector()
+  const { tools } = deriveWriteTools(graph, { audit, now: CLOCK, roles: CURATOR })
+
+  writeTool(tools).execute(
+    { type: 'Pattern', id: 'PAT-B', data: { status: 'verified' } },
+    { agentId: 'curator-session-1' },
+  )
+
+  const written = readFileSync(join(root, 'objects/patterns/PAT-B.yaml'), 'utf8')
+  assert.match(written, /status: verified/)
+  assert.equal(entries[0]?.outcome, 'allowed')
+})
+
+test('a role that may write the type may still be refused the move', () => {
+  // The fixture grants `editor` the type and withholds the promotion from it: editing a
+  // claim and vouching for it are different rights, and this is where that shows.
+  const root = scratchDomain('lifecycle')
+  const graph = loadGraph(root)
+  const { entries, audit } = collector()
+  const { tools } = deriveWriteTools(graph, { audit, now: CLOCK, roles: EDITOR })
+
+  assert.throws(
+    () =>
+      writeTool(tools).execute(
+        { type: 'Pattern', id: 'PAT-B', data: { status: 'verified' } },
+        { agentId: 'editor-session-1' },
+      ),
+    /write denied \(transition-not-permitted\)/,
+  )
+  const untouched = readFileSync(join(root, 'objects/patterns/PAT-B.yaml'), 'utf8')
+  assert.match(untouched, /status: candidate/)
+  assert.equal(entries[0]?.reason, 'transition-not-permitted')
+})
+
+test('a state that was never declared cannot be written at all', () => {
+  const root = scratchDomain('lifecycle')
+  const graph = loadGraph(root)
+  const { audit } = collector()
+  const { tools } = deriveWriteTools(graph, { audit, now: CLOCK, roles: CURATOR })
+
+  assert.throws(
+    () =>
+      writeTool(tools).execute(
+        { type: 'Pattern', id: 'PAT-B', data: { status: 'blessed' } },
+        { agentId: 'curator-session-1' },
+      ),
+    /write denied \(unknown-state\)/,
+  )
+})
+
+test('a role that may record usage may count without being allowed to author', () => {
+  const root = scratchDomain('lifecycle')
+  const graph = loadGraph(root)
+  const { audit } = collector()
+  const { tools } = deriveWriteTools(graph, {
+    audit,
+    now: CLOCK,
+    roles: [...CURATOR, ...EXECUTOR],
+  })
+
+  // The executor may move a counter …
+  const { entries } = collector()
+  const withAudit = deriveWriteTools(graph, {
+    audit: entries.push.bind(entries),
+    now: CLOCK,
+    roles: [...CURATOR, ...EXECUTOR],
+  })
+  writeTool(withAudit.tools).execute(
+    { type: 'Pattern', id: 'PAT-A', data: {}, increment: { hits: 1 } },
+    { agentId: 'exec-session-1' },
+  )
+  assert.match(readFileSync(join(root, 'objects/patterns/PAT-A.yaml'), 'utf8'), /hits: 3/)
+  // The trail names the counter that moved; an increment otherwise records nothing moved.
+  assert.deepEqual(entries[0]?.fields, ['hits'])
+
+  // … but may not write the entity itself: `written_by` still governs that.
+  assert.throws(
+    () =>
+      writeTool(tools).execute(
+        { type: 'Pattern', id: 'PAT-A', data: { claim: 'rewritten' } },
+        { agentId: 'exec-session-1' },
+      ),
+    /write denied \(role-not-permitted\)/,
+  )
+})
+
+test('the author role may not move the counter', () => {
+  const root = scratchDomain('lifecycle')
+  const graph = loadGraph(root)
+  const { entries, audit } = collector()
+  const { tools } = deriveWriteTools(graph, { audit, now: CLOCK, roles: CURATOR })
+
+  assert.throws(
+    () =>
+      writeTool(tools).execute(
+        { type: 'Pattern', id: 'PAT-A', data: {}, increment: { hits: 1 } },
+        { agentId: 'curator-session-1' },
+      ),
+    /write denied \(increment-not-permitted\)/,
+  )
+  assert.match(entries[0]?.detail ?? '', /executor/)
+})
+
+test('incrementing a field that is not a counter is refused, and says how to make it one', () => {
+  const root = scratchDomain('lifecycle')
+  const graph = loadGraph(root)
+  const { entries, audit } = collector()
+  const { tools } = deriveWriteTools(graph, { audit, now: CLOCK, roles: [...CURATOR, ...EXECUTOR] })
+
+  assert.throws(
+    () =>
+      writeTool(tools).execute(
+        { type: 'Pattern', id: 'PAT-A', data: {}, increment: { status: 1 } },
+        { agentId: 'exec-session-1' },
+      ),
+    /write denied \(not-a-counter\)/,
+  )
+  assert.match(entries[0]?.detail ?? '', /increment_by/)
+})
+
+test('a delta that is not a whole number is refused', () => {
+  const root = scratchDomain('lifecycle')
+  const graph = loadGraph(root)
+  const { audit } = collector()
+  const { tools } = deriveWriteTools(graph, { audit, now: CLOCK, roles: [...CURATOR, ...EXECUTOR] })
+
+  for (const delta of [1.5, 0, '1']) {
+    assert.throws(
+      () =>
+        writeTool(tools).execute(
+          { type: 'Pattern', id: 'PAT-A', data: {}, increment: { hits: delta } },
+          { agentId: 'exec-session-1' },
+        ),
+      /write denied \(invalid-increment\)/,
+      String(delta),
+    )
+  }
+})
+
+test('a counter that does not exist yet starts from zero rather than failing', () => {
+  const root = scratchDomain('lifecycle')
+  const graph = loadGraph(root)
+  const { audit } = collector()
+  const { tools } = deriveWriteTools(graph, { audit, now: CLOCK, roles: [...CURATOR, ...EXECUTOR] })
+
+  writeTool(tools).execute(
+    { type: 'Pattern', id: 'PAT-B', data: {}, increment: { hits: 1 } },
+    { agentId: 'exec-session-1' },
+  )
+  assert.match(readFileSync(join(root, 'objects/patterns/PAT-B.yaml'), 'utf8'), /hits: 1/)
+})

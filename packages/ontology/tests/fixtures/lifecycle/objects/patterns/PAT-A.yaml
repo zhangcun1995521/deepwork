@@ -1,0 +1,4 @@
+pattern_id: PAT-A
+status: verified
+claim: A missing field mapping causes a null pointer.
+hits: 2

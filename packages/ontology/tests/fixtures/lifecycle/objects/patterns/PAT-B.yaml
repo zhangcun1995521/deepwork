@@ -1,0 +1,3 @@
+pattern_id: PAT-B
+status: candidate
+claim: Retry loops need a ceiling.

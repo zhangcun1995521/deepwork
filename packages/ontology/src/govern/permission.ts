@@ -46,6 +46,10 @@ export type DenialReason =
   | 'unknown-state'
   | 'no-declared-transition'
   | 'transition-not-permitted'
+  // Counter refusals, for the same reason: one vocabulary a caller can branch on.
+  | 'invalid-increment'
+  | 'not-a-counter'
+  | 'increment-not-permitted'
 
 /** The outcome of a permission check. */
 export type Permission =
@@ -103,6 +107,17 @@ export function authoriseWrite(
   targetFile: string,
   agentId: string | undefined,
   rules: readonly RoleRule[],
+  options: {
+    /**
+     * Whether the call authors content, and therefore needs `written_by`.
+     *
+     * False for a call that only moves a counter: recording that knowledge was used is
+     * not authoring it, and `written_by` answers a different question. Collapsing the two
+     * would mean only authors could count usage — and the role that actually observes
+     * usage is never the author.
+     */
+    requireWrittenBy?: boolean
+  } = {},
 ): Permission {
   if (agentId === undefined || agentId.length === 0) {
     return { allowed: false, reason: 'no-caller', detail: 'the runtime reported no agent identity' }
@@ -115,6 +130,12 @@ export function authoriseWrite(
       detail: `agent "${agentId}" matches no configured role`,
     }
   }
+  if (options.requireWrittenBy === false) {
+    // Still checked: the id is usable and the path stays inside the declared directory.
+    // Only the question "may this role author this type" is someone else's to answer.
+    return finish(type, ontologyRoot, targetFile, role)
+  }
+
   if (type.writtenBy.length === 0) {
     return {
       allowed: false,
@@ -129,6 +150,16 @@ export function authoriseWrite(
       detail: `role "${role}" is not in written_by for "${type.name}" (${type.writtenBy.join(', ')})`,
     }
   }
+  return finish(type, ontologyRoot, targetFile, role)
+}
+
+/** The checks that apply however the call is authorised: is this a path in the domain. */
+function finish(
+  type: ObjectTypeDecl,
+  ontologyRoot: string,
+  targetFile: string,
+  role: string,
+): Permission {
   if (type.directory.length === 0) {
     return {
       allowed: false,

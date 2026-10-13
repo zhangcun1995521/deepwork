@@ -32,6 +32,14 @@ export interface LifecycleDecl {
   initial: string
   /** Every declared state. */
   states: string[]
+  /**
+   * State a read assumes when the caller does not ask for one.
+   *
+   * This is how "use only what somebody vouched for" becomes the default without
+   * becoming a silent filter: the read tools report how many entities they left out and
+   * how to see them, the same way a capped result reports its own cap.
+   */
+  defaultState?: string
   /** Declared moves, in declaration order. */
   transitions: TransitionDecl[]
 }
@@ -128,5 +136,19 @@ export function parseLifecycle(
     }
   }
 
-  return { field, initial, states, transitions }
+  const defaultState = typeof raw.default_state === 'string' ? raw.default_state : ''
+  if (defaultState.length > 0 && !states.includes(defaultState)) {
+    warnings.push(
+      `object type "${typeName}": lifecycle default_state "${defaultState}" is not a declared ` +
+        'state; reads will not filter by state',
+    )
+  }
+
+  return {
+    field,
+    initial,
+    states,
+    transitions,
+    ...(defaultState.length > 0 && states.includes(defaultState) ? { defaultState } : {}),
+  }
 }
