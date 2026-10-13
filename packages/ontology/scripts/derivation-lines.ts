@@ -74,7 +74,15 @@ export function derivationLines(root: string, roles: RoleRule[] = []): string[] 
         lines.push(
           `         ${' '.repeat(12)} ${transition.name}: ` +
             `${transition.from.join('/')} → ${transition.to}   by: ${transition.by.join(', ')}` +
-            (transition.requiresReview ? '   requires an independent verdict' : ''),
+            (transition.review === undefined
+              ? ''
+              : '   needs a ' +
+                transition.review.type +
+                ' (' + transition.review.field + '=' + transition.review.pass +
+                (transition.review.scope === undefined
+                  ? ''
+                  : ', ' + transition.review.scope.field + '=' + transition.review.scope.value) +
+                ')'),
         )
       }
     }

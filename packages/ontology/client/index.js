@@ -271,6 +271,198 @@ window.__ModuleLoader__.load({
     }
 
     /** Body for a domain snapshot. */
+    /**
+     * The declared rules, shown before the tools.
+     *
+     * The tools are the *result* of the declaration; a lifecycle is the most legible part of the
+     * declaration itself. A reader who wants to know who may move a deliverable from draft to
+     * signed_off, and what has to exist before they may, should not have to open the schema to
+     * find out. That question is what this page is for.
+     */
+    function Rules(props) {
+      const withLifecycle = props.objectTypes.filter((type) => type.lifecycle)
+      if (withLifecycle.length === 0) {
+        return react.createElement(
+          Section,
+          { title: 'The rules', note: 'none declared' },
+          react.createElement(
+            'p',
+            { style: { ...MUTED, fontSize: 12.5, margin: 0 } },
+            'This domain declares no lifecycle, so nothing here has states to move between and ' +
+              'nothing to enforce on the way. Declaring one turns into the table below with no ' +
+              'code: who may make each move, and which moves need a verdict from somebody else.',
+          ),
+        )
+      }
+      return react.createElement(
+        Section,
+        {
+          title: 'The rules',
+          note:
+            withLifecycle.length +
+            (withLifecycle.length === 1 ? ' type with states' : ' types with states'),
+        },
+        withLifecycle.map((type) =>
+          react.createElement(RulesCard, { key: type.name, type: type }),
+        ),
+      )
+    }
+
+    /** One type's states and the moves between them. */
+    function RulesCard(props) {
+      const lifecycle = props.type.lifecycle
+      return react.createElement(
+        'div',
+        { style: { marginTop: 16 } },
+        react.createElement(
+          'div',
+          { style: { display: 'flex', alignItems: 'baseline', gap: 7, flexWrap: 'wrap' } },
+          react.createElement('span', { style: { fontWeight: 600 } }, props.type.name),
+          react.createElement('span', { style: { ...MUTED, fontSize: 12 } }, 'moves the field'),
+          react.createElement(Code, { muted: true }, lifecycle.field),
+        ),
+        react.createElement(StateChain, { lifecycle: lifecycle }),
+        react.createElement(Table, {
+          headers: ['move', 'from → to', 'who may make it', 'what it needs first'],
+          rows: lifecycle.transitions.map((transition) => [
+            react.createElement(Code, null, transition.name),
+            react.createElement(
+              'span',
+              null,
+              react.createElement('span', { style: { ...MUTED } }, transition.from.join(' / ')),
+              react.createElement('span', { style: { ...MUTED } }, ' → '),
+              react.createElement('span', { style: { fontWeight: 600 } }, transition.to),
+            ),
+            transition.by.length > 0
+              ? react.createElement(Code, null, transition.by.join(', '))
+              : react.createElement('span', { style: { ...MUTED, fontSize: 12 } }, 'nobody'),
+            transition.review === undefined
+              ? react.createElement('span', { style: { ...MUTED, fontSize: 12 } }, 'nothing')
+              : react.createElement(NeedsVerdict, { review: transition.review }),
+          ]),
+        }),
+      )
+    }
+
+    /** The states in order, with where things start and what a read assumes. */
+    function StateChain(props) {
+      const lifecycle = props.lifecycle
+      const parts = []
+      lifecycle.states.forEach((state, index) => {
+        if (index > 0) {
+          parts.push(
+            react.createElement('span', { key: 'arrow-' + index, style: { ...MUTED } }, '→'),
+          )
+        }
+        parts.push(
+          react.createElement(
+            'span',
+            {
+              key: state,
+              style: {
+                border: HAIRLINE,
+                borderRadius: 20,
+                padding: '1px 9px',
+                fontSize: 11.5,
+                // Where something starts is a fact about the state, so it is shown on the state
+                // rather than left to the transitions table to imply.
+                ...(state === lifecycle.initial ? { fontWeight: 600 } : {}),
+              },
+            },
+            state,
+          ),
+        )
+      })
+      if (lifecycle.defaultState !== undefined) {
+        parts.push(
+          react.createElement(
+            'span',
+            { key: 'default', style: { ...MUTED, fontSize: 11.5, marginLeft: 4 } },
+            'reads return only “' +
+              lifecycle.defaultState +
+              '”, and say how many they left out',
+          ),
+        )
+      }
+      return react.createElement(
+        'div',
+        {
+          style: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            flexWrap: 'wrap',
+            margin: '9px 0 12px',
+          },
+        },
+        parts,
+      )
+    }
+
+    /**
+     * What a move needs before it will happen.
+     *
+     * The scope is the part that keeps a sequence a sequence. Without it shown, four gated moves
+     * read as four copies of one gate, and a signature that opens exactly one of them looks like
+     * a signature that opens all of them.
+     */
+    function NeedsVerdict(props) {
+      const review = props.review
+      return react.createElement(
+        'span',
+        { style: { fontSize: 12 } },
+        react.createElement('b', null, review.type),
+        react.createElement(
+          'span',
+          { style: { ...MUTED } },
+          ' · ' + review.field + '=' + review.pass,
+        ),
+        review.scope === undefined
+          ? null
+          : react.createElement(
+              'span',
+              { style: { ...MUTED, fontSize: 11.5 } },
+              ' · gated on ' + review.scope.field + '=' + review.scope.value,
+            ),
+      )
+    }
+
+    /** Declared actions: a named way to write, on the same write path as everything else. */
+    function Actions(props) {
+      if (props.actions.length === 0) {
+        return react.createElement(
+          Section,
+          { title: 'Actions', note: 'none declared' },
+          react.createElement(
+            'p',
+            { style: { ...MUTED, fontSize: 12.5, margin: 0 } },
+            'This domain names no actions, so the agent writes through the generic tool. A ' +
+              'declared action becomes a tool of its own — with the precondition it asserts, and ' +
+              'the roles narrowed to whoever may invoke it — without any code behind it, and ' +
+              'still governed by the same permissions, states and audit as a direct write.',
+          ),
+        )
+      }
+      return react.createElement(
+        Section,
+        {
+          title: 'Actions',
+          note: props.actions.length + ' — a named way to write, not a second write path',
+        },
+        react.createElement(Table, {
+          headers: ['action', 'does', 'on', 'who may invoke it'],
+          rows: props.actions.map((action) => [
+            react.createElement(Code, null, action.name),
+            react.createElement('span', { style: { fontSize: 12 } }, action.use),
+            react.createElement(Code, { muted: true }, action.target),
+            action.by.length > 0
+              ? react.createElement(Code, null, action.by.join(', '))
+              : react.createElement('span', { style: { ...MUTED, fontSize: 12 } }, 'nobody'),
+          ]),
+        }),
+      )
+    }
+
     function Domain(props) {
       const data = props.data
       const warnings = data.warnings.load.concat(data.warnings.derivation)
@@ -281,6 +473,11 @@ window.__ModuleLoader__.load({
         null,
         react.createElement('code', { style: { fontFamily: MONO, fontSize: 11.5, ...MUTED } }, data.root),
         react.createElement(Summary, { summary: data.summary }),
+
+        // Declared first, derived second. The tools are what came out of the declaration, and a
+        // page that leads with them invites the reader to think the tools were configured.
+        react.createElement(Rules, { objectTypes: data.objectTypes }),
+        react.createElement(Actions, { actions: data.actions }),
 
         react.createElement(
           Section,
@@ -350,25 +547,53 @@ window.__ModuleLoader__.load({
           }),
         ),
 
-        warnings.length > 0
-          ? react.createElement(
-              Section,
-              { title: 'Warnings', note: warnings.length + '' },
-              react.createElement(
+        // Problems and notes, kept apart for the same reason the command keeps them apart: what
+        // needs somebody to act and what the data has not grown into yet are different answers,
+        // and a list that mixes them teaches the reader to skim both.
+        react.createElement(
+          Section,
+          {
+            title: 'Problems',
+            note:
+              warnings.length === 0
+                ? 'none — every declaration was usable'
+                : warnings.length + ' — somebody has to act',
+          },
+          warnings.length > 0
+            ? react.createElement(
                 'ul',
                 { style: { margin: 0, paddingLeft: 18, fontFamily: MONO, fontSize: 11.5, lineHeight: 1.8 } },
                 warnings.map((warning, index) => react.createElement('li', { key: index }, warning)),
-              ),
-            )
-          : react.createElement(
-              Section,
-              { title: 'Warnings', note: 'none' },
-              react.createElement(
+              )
+            : react.createElement(
                 'p',
                 { style: { ...MUTED, fontSize: 12.5, margin: 0 } },
                 'The domain loaded cleanly and every declaration was usable.',
               ),
-            ),
+        ),
+
+        react.createElement(
+          Section,
+          {
+            title: 'Notes',
+            note:
+              data.notes.length === 0
+                ? 'none'
+                : data.notes.length + ' — nothing to fix, but not nothing',
+          },
+          data.notes.length > 0
+            ? react.createElement(
+                'ul',
+                { style: { margin: 0, paddingLeft: 18, fontFamily: MONO, fontSize: 11.5, lineHeight: 1.8 } },
+                data.notes.map((note, index) => react.createElement('li', { key: index }, note)),
+              )
+            : react.createElement(
+                'p',
+                { style: { ...MUTED, fontSize: 12.5, margin: 0 } },
+                'Declared directories all exist, every relation has been wired by an instance, and ' +
+                  'every instance carries its own identity.',
+              ),
+        ),
       )
     }
 

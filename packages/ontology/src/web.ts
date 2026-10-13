@@ -19,6 +19,7 @@
  */
 
 import type { OntologyGraph } from './engine/graph.ts'
+import type { ReviewRequirement } from './engine/lifecycle.ts'
 import type { RoleRule } from './govern/permission.ts'
 import { deriveActionTools } from './tools/actions.ts'
 import { deriveTools, type DeriveOptions, type DerivedToolSpec } from './tools/derive.ts'
@@ -90,7 +91,15 @@ export interface DomainSnapshot {
         from: string[]
         to: string
         by: string[]
-        requiresReview: boolean
+        /**
+         * What this move needs before it will happen, when it needs anything.
+         *
+         * The requirement itself rather than a boolean, because "this move needs a verdict" is
+         * not something a reader can act on: the question is which verdict, and — on a domain
+         * with more than one gate — which gate. Both live in the requirement, and a panel that
+         * cannot see them cannot show the rule it is claiming to show.
+         */
+        review?: ReviewRequirement
       }>
     }
     instances: number
@@ -192,7 +201,7 @@ export function domainSnapshot(
                 from: transition.from,
                 to: transition.to,
                 by: transition.by,
-                requiresReview: transition.review !== undefined,
+                ...(transition.review === undefined ? {} : { review: transition.review }),
               })),
             },
           }),

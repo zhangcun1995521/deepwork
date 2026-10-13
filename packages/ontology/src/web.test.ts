@@ -10,8 +10,8 @@ const fixture = (name: string): string =>
   fileURLToPath(new URL(`../tests/fixtures/${name}`, import.meta.url))
 
 /** The shipped example, which the panel is expected to be pointed at. */
-const example = (): string =>
-  fileURLToPath(new URL('../examples/project-delivery', import.meta.url))
+const example = (name = 'project-delivery'): string =>
+  fileURLToPath(new URL(`../examples/${name}`, import.meta.url))
 
 test('the snapshot reports what the engine found, in the engine\'s own vocabulary', () => {
   const snapshot = domainSnapshot(loadGraph(example()), [])
@@ -109,9 +109,33 @@ test('the snapshot carries a declared lifecycle, so a reader can see the rules',
   const deliverable = snapshot.objectTypes.find((type) => type.name === 'Deliverable')
   assert.equal(deliverable?.lifecycle?.field, 'state')
   assert.deepEqual(deliverable?.lifecycle?.states, ['draft', 'signed_off'])
-  assert.equal(deliverable?.lifecycle?.transitions[0]?.requiresReview, true)
   assert.equal(deliverable?.lifecycle?.transitions[0]?.by.join(','), 'engineer')
+  // The requirement itself, not a flag saying one exists. "This move needs a verdict" is not
+  // something a reader can act on — which verdict is, and on a domain with more than one gate,
+  // which gate is too. Both are in here, and a panel could not show the rule without them.
+  assert.equal(deliverable?.lifecycle?.transitions[0]?.review?.type, 'Signoff')
+  assert.equal(deliverable?.lifecycle?.transitions[0]?.review?.field, 'decision')
+  assert.equal(deliverable?.lifecycle?.transitions[0]?.review?.pass, 'signed')
+  assert.equal(deliverable?.lifecycle?.transitions[0]?.review?.scope, undefined)
 
   const signoff = snapshot.objectTypes.find((type) => type.name === 'Signoff')
   assert.equal(signoff?.lifecycle, undefined, 'a type without a lifecycle declares none')
+})
+
+test('a gated requirement reaches the panel with the gate it is scoped to', () => {
+  const snapshot = domainSnapshot(loadGraph(example('engagement')), [
+    { prefix: 'session-', role: 'fde' },
+  ])
+  const engagement = snapshot.objectTypes.find((type) => type.name === 'Engagement')
+  const transitions = engagement?.lifecycle?.transitions ?? []
+  const build = transitions.find((transition) => transition.name === 'agree_build')
+
+  // Without the scope a panel can show that a stage needs signing for and not which signature,
+  // which is the whole difference between a sequence of gates and one gate wearing four names.
+  assert.deepEqual(build?.review?.scope, { field: 'gate', value: 'build' })
+  assert.equal(
+    transitions.every((transition) => transition.review !== undefined),
+    true,
+    'every stage here is gated',
+  )
 })
