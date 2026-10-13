@@ -110,6 +110,14 @@ That second run is a governance model in fifteen lines, and not one of them was 
 hand: it is the domain, read back. The enforcement behind those lines is described under
 [Governance](#governance) and checked by 124 tests.
 
+## What it looks like when an agent uses it
+
+A real session, with the query modes the agent chose and the answer it reached — including two
+details that only a declared world can produce: it refused to invent a project name the schema
+does not declare, and it drew a conclusion that needed the graph rather than a lookup.
+
+[docs/agent-session.md](docs/agent-session.md)
+
 ## Status
 
 Working and demonstrated, not finished.
