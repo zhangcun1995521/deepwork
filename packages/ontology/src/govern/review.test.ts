@@ -98,3 +98,55 @@ test('an unknown caller cannot be its own reviewer by accident', () => {
   const decision = check([verdict('V-1', 'PAT-B', 'approved')], { 'V-1': 'reviewer-1' }, undefined)
   assert.equal(decision.allowed, true, 'a verdict from a known third party still counts')
 })
+
+// ── a requirement can be scoped to one gate ─────────────────────────────────────
+//
+// The unscoped rule is "a passing verdict about this subject exists". On a workflow with more
+// than one gate that is too loose: the first gate's sign-off would open every gate after it,
+// because each of them is also just "a passing verdict about this subject".
+
+const GATE_TWO: ReviewRequirement = { ...REQUIREMENT, scope: { field: 'gate', value: 'gate_two' } }
+
+function checkScoped(
+  requirement: ReviewRequirement,
+  verdicts: VerdictObject[],
+  producers: Record<string, string | undefined>,
+) {
+  return authoriseReview({
+    requirement,
+    subjectId: 'PAT-B',
+    verdicts,
+    producerOf: (item) => producers[item.id],
+    callerAgentId: 'curator-1',
+  })
+}
+
+test('a verdict scoped to another gate does not open this one', () => {
+  const scoped = verdict('V-1', 'PAT-B', 'approved', { gate: 'gate_one' })
+  const decision = checkScoped(GATE_TWO, [scoped], { 'V-1': 'reviewer-1' })
+
+  assert.equal(decision.allowed, false)
+  assert.equal(decision.allowed === false && decision.reason, 'review-required')
+  // The refusal names the gate it wanted, so the caller is not left looking for a typo.
+  assert.match(decision.allowed === false ? decision.detail : '', /gate is "gate_two"/)
+})
+
+test('a verdict scoped to this gate opens it, and the scope keeps its producer rule', () => {
+  const mine = verdict('V-1', 'PAT-B', 'approved', { gate: 'gate_two' })
+  const other = verdict('V-2', 'PAT-B', 'approved', { gate: 'gate_one' })
+
+  // The right gate, from somebody else.
+  assert.equal(checkScoped(GATE_TWO, [mine, other], { 'V-1': 'reviewer-1' }).allowed, true)
+
+  // The right gate, from the caller: the scope narrows which verdicts count, it does not
+  // relax who may produce one.
+  const selfScoped = checkScoped(GATE_TWO, [mine], { 'V-1': 'curator-1' })
+  assert.equal(selfScoped.allowed, false)
+  assert.equal(selfScoped.allowed === false && selfScoped.reason, 'self-review-not-allowed')
+})
+
+test('an unscoped requirement still accepts any passing verdict, as before', () => {
+  // The field the scope reads need not exist on the verdict at all.
+  const decision = check([verdict('V-1', 'PAT-B', 'approved')], { 'V-1': 'reviewer-1' }, 'curator-1')
+  assert.equal(decision.allowed, true)
+})

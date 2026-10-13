@@ -1,0 +1,5 @@
+signoff_id: SIG-001
+engagement: ENG-001
+gate: validate
+decision: approved
+basis: The assessment names the missing customs interface agreement as the blocker, which matches what the customer's own network team reports.

@@ -1,0 +1,4 @@
+engagement_id: ENG-001
+phase: validate
+customer: CUST-NORTHWIND
+use_case: Reconcile the customs feed against the order book without a nightly manual pass.

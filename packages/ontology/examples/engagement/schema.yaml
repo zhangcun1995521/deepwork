@@ -1,0 +1,98 @@
+version: "1.0"
+
+# A delivery engagement that moves through stages, and cannot enter one until the customer has
+# signed for it.
+#
+# The point is the shape: a prompt can say "do not start building before the assessment is
+# agreed" and a model can decide to be agreeable anyway. Here the agreement is a record, the
+# record is scoped to the stage it opens, and the move that would skip ahead is refused until
+# it exists.
+#
+# Each gate names its own `scope`, which is what makes this a sequence rather than one gate
+# wearing four names. Without it a single sign-off would satisfy every requirement declared on
+# the engagement — each of them is, after all, "a passing verdict about this engagement" — and
+# the first signature would open the whole rest of the road.
+#
+# The signer is a different role from the mover, so the separation is structural: an FDE cannot
+# sign for its own stage even by mistake, because it has no grant on the sign-off type at all.
+
+object_types:
+  Engagement:
+    primary_key: engagement_id
+    required_fields: [engagement_id, phase, customer]
+    file_location: objects/engagements/ENG-*.yaml
+    # The mover. The customer is deliberately absent: signing for a stage is not the work.
+    written_by: [fde]
+    lifecycle:
+      field: phase
+      initial: qualify
+      states: [qualify, validate, build, handover]
+      transitions:
+        agree_assessment:
+          from: [qualify]
+          to: validate
+          by: [fde]
+          requires_review:
+            type: Signoff
+            link: engagement
+            field: decision
+            pass: approved
+            scope: { field: gate, value: validate }
+        agree_build:
+          from: [validate]
+          to: build
+          by: [fde]
+          requires_review:
+            type: Signoff
+            link: engagement
+            field: decision
+            pass: approved
+            scope: { field: gate, value: build }
+        agree_handover:
+          from: [build]
+          to: handover
+          by: [fde]
+          requires_review:
+            type: Signoff
+            link: engagement
+            field: decision
+            pass: approved
+            scope: { field: gate, value: handover }
+    fields:
+      engagement_id: { type: string, required: true }
+      # A plain string rather than an enum of the same four values: the lifecycle above is
+      # already the one declaration of which phases exist, and a second copy of that set is a
+      # second thing to keep in step.
+      phase: { type: string, required: true }
+      customer: { type: string, required: true }
+      use_case: { type: string }
+
+  Signoff:
+    primary_key: signoff_id
+    required_fields: [signoff_id, engagement, gate, decision]
+    file_location: objects/signoffs/SIG-*.yaml
+    written_by: [customer]
+    fields:
+      signoff_id: { type: string, required: true }
+      engagement: { type: string, required: true }
+      # Which stage this signature is for. The requirements above read it, so one signature
+      # opens one gate.
+      gate: { type: enum, values: [validate, build, handover], required: true }
+      decision: { type: enum, values: [approved, declined], required: true }
+      basis: { type: string }
+
+link_types:
+  signed_for:
+    from: Signoff
+    to: Engagement
+    via: engagement
+    description: The engagement a signature is about.
+
+functions: {}
+
+action_types:
+  # The same move as the transition, named. It does not take a shortcut past the gate: an
+  # action is a shell over the write path, so the signature requirement applies to it too.
+  start_build:
+    use: update
+    target: Engagement

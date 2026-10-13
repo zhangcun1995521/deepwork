@@ -57,16 +57,24 @@ export function authoriseReview(options: {
     (verdict) =>
       verdict.type === requirement.type &&
       verdict.data[requirement.link] === subjectId &&
-      verdict.data[requirement.field] === requirement.pass,
+      verdict.data[requirement.field] === requirement.pass &&
+      // A verdict scoped to one gate counts only for that gate. Unscoped, it counts for the
+      // subject, which is what a single-decision domain wants and what a sequence must not have.
+      (requirement.scope === undefined ||
+        verdict.data[requirement.scope.field] === requirement.scope.value),
   )
 
   if (matching.length === 0) {
+    const scope =
+      requirement.scope === undefined
+        ? ''
+        : ` and whose ${requirement.scope.field} is "${requirement.scope.value}"`
     return {
       allowed: false,
       reason: 'review-required',
       detail:
         `moving this ${subjectId} requires a "${requirement.type}" whose ${requirement.link} is ` +
-        `"${subjectId}" and whose ${requirement.field} is "${requirement.pass}"; none exists`,
+        `"${subjectId}" and whose ${requirement.field} is "${requirement.pass}"${scope}; none exists`,
     }
   }
 

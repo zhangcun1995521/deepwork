@@ -33,6 +33,18 @@ export interface ReviewRequirement {
   field: string
   /** Value of that field that means the verdict passed. */
   pass: string
+  /**
+   * A second field on the verdict that must equal a given value.
+   *
+   * Without it, a passing verdict is a verdict about the subject and nothing more — so one
+   * approval satisfies every requirement declared on that subject. That is right for a single
+   * decision and wrong for a sequence of them: on a staged workflow the first gate's sign-off
+   * would open every gate after it, which is the arrangement a gate exists to prevent.
+   *
+   * Declared per requirement rather than solved by giving each gate its own verdict type, so
+   * that a signer is granted once on one type instead of once per gate.
+   */
+  scope?: { field: string; value: string }
 }
 
 /** One declared move between states. */
@@ -125,7 +137,27 @@ function parseReviewRequirement(
     )
     return undefined
   }
-  return { type, link, field, pass }
+
+  // Optional, and half-specified is a mistake rather than a decision: a scope meant to narrow
+  // the requirement that cannot be read would silently widen it back to every verdict.
+  let scope: { field: string; value: string } | undefined
+  const rawScope = raw.scope
+  if (rawScope !== undefined && rawScope !== null) {
+    const scopeField = isMapping(rawScope) && typeof rawScope.field === 'string' ? rawScope.field : ''
+    const scopeValue =
+      isMapping(rawScope) && typeof rawScope.value === 'string' ? rawScope.value : ''
+    if (scopeField.length === 0 || scopeValue.length === 0) {
+      warnings.push(
+        `object type "${typeName}": transition "${transition}" requires_review declares a scope ` +
+          'without both "field" and "value"; the requirement would apply to every verdict about ' +
+          'the subject, so it is ignored and the move goes unchecked',
+      )
+      return undefined
+    }
+    scope = { field: scopeField, value: scopeValue }
+  }
+
+  return { type, link, field, pass, ...(scope === undefined ? {} : { scope }) }
 }
 
 export function parseLifecycle(

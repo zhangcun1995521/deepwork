@@ -108,7 +108,7 @@ objects
 
 That second run is a governance model in fifteen lines, and not one of them was written by
 hand: it is the domain, read back. The enforcement behind those lines is described under
-[Governance](#governance) and checked by 149 tests.
+[Governance](#governance) and checked by 157 tests.
 
 ## What it looks like when an agent uses it
 
@@ -140,7 +140,7 @@ Working and demonstrated, not finished.
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-149 tests in total.
+157 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
@@ -218,6 +218,7 @@ domain to check, so it is reported as a failing domain rather than as a diagnost
 | `packages/ontology` | the plugin: engine, tool derivation, governance |
 | `packages/ontology/examples/project-delivery` | a complete synthetic domain to point at |
 | `packages/ontology/examples/lessons` | the experience loop as a domain: a lesson arrives as a `candidate`, reads return only what somebody else upheld, and counting applications is a grant apart from writing one |
+| `packages/ontology/examples/engagement` | a staged delivery: four phases, and the customer's signature scoped to the stage it opens, so the road opens one gate at a time |
 | `packages/probe` | the smallest possible plugin, kept as the smoke test for the plugin route |
 | `tools/fde` | the FDE toolkit: qualify a use case before anything gets built (Python, runs standalone) |
 | `PROJECT_STATE.md` | the working record: decisions, verified facts, environment pitfalls |
@@ -273,6 +274,14 @@ That question is answered from a sidecar the platform writes itself, never from 
 caller filled in — a verdict that names its own producer is a form, not a control. A verdict
 whose producer cannot be established is refused, because "we cannot tell who reviewed this"
 is not "somebody did".
+
+**A requirement can be scoped to one gate, so a sequence stays a sequence.** Unscoped, "a
+passing verdict about this subject exists" is the whole rule — which is right for a single
+decision and wrong for a staged workflow, where the first signature would open every stage after
+it, each of them being a passing verdict about the same engagement. A requirement may therefore
+name a second field and value the verdict has to carry (`scope: { field: gate, value: build }`),
+so one signature opens one gate. It is declared per requirement rather than solved by giving each
+gate its own verdict type, because that would mean granting a signer once per gate.
 
 ## Design notes
 
