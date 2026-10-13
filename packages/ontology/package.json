@@ -92,5 +92,9 @@
     "governance",
     "permissions",
     "audit"
-  ]
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  }
 }
