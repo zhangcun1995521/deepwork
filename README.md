@@ -40,6 +40,10 @@ Every part of this repository is one step of the same journey: a **world is decl
 Read it top to bottom and this repository is one thing. Read the sections below out of order
 and it is a list of mechanisms.
 
+The same line as a picture — what a write passes through, and what comes out either side:
+
+![How a write travels through DeepWork](docs/architecture.svg)
+
 ## Who this is for
 
 Anyone putting an agent into a real business system. A forward-deployed engineer standing up

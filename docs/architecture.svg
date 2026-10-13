@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="700" viewBox="0 0 900 700" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif">
+  <rect width="900" height="700" fill="#161a21"/>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#6b7684"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#37c98f"/>
+    </marker>
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#f0a53a"/>
+    </marker>
+  </defs>
+
+  <text x="34" y="40" fill="#e6e8eb" font-size="19" font-weight="600">DeepWork — 一次写操作经过什么</text>
+  <text x="34" y="62" fill="#9aa4b2" font-size="12.5">声明在下面，强制在上面。同一条路走两遍：一遍是"它长出了什么能力"，一遍是"它拦住了什么"。</text>
+
+  <!-- ⑥ 装配 -->
+  <rect x="34" y="84" width="832" height="44" rx="7" fill="#1b2029" stroke="#2b323c"/>
+  <text x="50" y="103" fill="#c8d3e0" font-size="12.5" font-weight="600">⑥ 装配</text>
+  <text x="50" y="119" fill="#9aa4b2" font-size="11.5">profile：装哪些插件 · 什么角色 · 指向哪个域　—　换客户只换这一层</text>
+
+  <!-- 域 -->
+  <rect x="34" y="146" width="832" height="74" rx="7" fill="#141b16" stroke="#2f6b52"/>
+  <text x="50" y="167" fill="#37c98f" font-size="12.5" font-weight="600">② 域 —— 数据，不是代码</text>
+  <text x="50" y="186" fill="#c8d3e0" font-size="11.5" font-family="ui-monospace, Consolas, monospace">schema.yaml：对象 · 关系 · 状态与转换 · 谁能写 · 动作 · 查询 · skill 字段</text>
+  <text x="50" y="205" fill="#9aa4b2" font-size="11.5">加一个类型、删一个查询、改一条权限 —— 都只是改这里，引擎不动</text>
+
+  <!-- DeepWork -->
+  <rect x="34" y="238" width="832" height="196" rx="8" fill="#171c24" stroke="#39424f"/>
+  <text x="50" y="260" fill="#e6e8eb" font-size="13" font-weight="600">DeepWork —— 插件，不 fork</text>
+
+  <rect x="50" y="274" width="252" height="140" rx="6" fill="#1b2029" stroke="#2b323c"/>
+  <text x="64" y="295" fill="#c8d3e0" font-size="12" font-weight="600">① 本体引擎</text>
+  <text x="64" y="315" fill="#9aa4b2" font-size="11.5">读域 · 建图 · 推边</text>
+  <text x="64" y="333" fill="#9aa4b2" font-size="11.5">声明 → 派生：</text>
+  <text x="64" y="351" fill="#c8d3e0" font-size="11.5">· 读工具与查询模式</text>
+  <text x="64" y="369" fill="#c8d3e0" font-size="11.5">· 写工具与动作</text>
+  <text x="64" y="387" fill="#c8d3e0" font-size="11.5">· 状态机 · 复核要求</text>
+
+  <rect x="324" y="274" width="252" height="140" rx="6" fill="#1b2029" stroke="#2b323c"/>
+  <text x="338" y="295" fill="#c8d3e0" font-size="12" font-weight="600">③ 治理</text>
+  <text x="338" y="315" fill="#9aa4b2" font-size="11.5">写在写路径上，不是约定：</text>
+  <text x="338" y="333" fill="#c8d3e0" font-size="11.5">· 写守卫（全局挂载）</text>
+  <text x="338" y="351" fill="#c8d3e0" font-size="11.5">· 权限从 written_by 派生</text>
+  <text x="338" y="369" fill="#c8d3e0" font-size="11.5">· 独立复核查写溯源</text>
+  <text x="338" y="387" fill="#c8d3e0" font-size="11.5">· 审计：只记字段名</text>
+
+  <rect x="598" y="274" width="252" height="140" rx="6" fill="#1b2029" stroke="#2b323c"/>
+  <text x="612" y="295" fill="#c8d3e0" font-size="12" font-weight="600">④ 产出</text>
+  <text x="612" y="315" fill="#9aa4b2" font-size="11.5">交给宿主的：</text>
+  <text x="612" y="333" fill="#c8d3e0" font-size="11.5">· 工具面（读写/动作）</text>
+  <text x="612" y="351" fill="#c8d3e0" font-size="11.5">· skill 目录贡献</text>
+  <text x="612" y="369" fill="#9aa4b2" font-size="11.5">给读者的：</text>
+  <text x="612" y="387" fill="#c8d3e0" font-size="11.5">· 面板快照</text>
+
+  <path d="M 302 344 L 322 344" stroke="#6b7684" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <path d="M 576 344 L 596 344" stroke="#6b7684" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <path d="M 450 220 L 450 272" stroke="#6b7684" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <text x="458" y="248" fill="#6b7684" font-size="11">读</text>
+
+  <!-- 宿主 -->
+  <rect x="34" y="452" width="832" height="66" rx="7" fill="#1b2029" stroke="#2b323c"/>
+  <text x="50" y="473" fill="#c8d3e0" font-size="12.5" font-weight="600">⑤ 宿主 —— DeepSeek Harness（第三方）</text>
+  <text x="50" y="492" fill="#9aa4b2" font-size="11.5">agent 循环 · 工具注册表 · skill 注册表 · 沙箱 · 会话</text>
+  <text x="50" y="509" fill="#c8d3e0" font-size="11.5">守卫也覆盖宿主自带的文件与 shell 工具 —— 否则换个工具就绕过去了</text>
+
+  <path d="M 724 426 L 724 450" stroke="#6b7684" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <path d="M 450 426 L 450 450" stroke="#6b7684" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+  <!-- 输出两条 -->
+  <rect x="34" y="546" width="404" height="118" rx="7" fill="#141b16" stroke="#2f6b52"/>
+  <text x="50" y="567" fill="#37c98f" font-size="12.5" font-weight="600">走通的样子</text>
+  <text x="50" y="587" fill="#c8d3e0" font-size="11.5">agent 拿到工具，按域里的查询回答</text>
+  <text x="50" y="605" fill="#c8d3e0" font-size="11.5">被认可的经验出现在它的 skill 目录里</text>
+  <text x="50" y="623" fill="#c8d3e0" font-size="11.5">进入某个状态需要别人签字 —— 自己签不算</text>
+  <text x="50" y="645" fill="#9aa4b2" font-size="11.5">每一个都能当场跑给人看</text>
+
+  <rect x="462" y="546" width="404" height="118" rx="7" fill="#221a14" stroke="#7a5a2a"/>
+  <text x="478" y="567" fill="#f0a53a" font-size="12.5" font-weight="600">拦住的样子</text>
+  <text x="478" y="587" fill="#c8d3e0" font-size="11.5">写域外路径 → 拒</text>
+  <text x="478" y="605" fill="#c8d3e0" font-size="11.5">值不在声明的集合里 → 拒</text>
+  <text x="478" y="623" fill="#c8d3e0" font-size="11.5">没有别人的裁决就推状态 → 拒</text>
+  <text x="478" y="645" fill="#9aa4b2" font-size="11.5">每次拒绝都留一条结构化审计</text>
+
+  <path d="M 236 518 L 236 544" stroke="#37c98f" stroke-width="1.4" marker-end="url(#arrow-green)"/>
+  <path d="M 664 518 L 664 544" stroke="#f0a53a" stroke-width="1.4" marker-end="url(#arrow-orange)"/>
+</svg>
