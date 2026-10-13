@@ -53,7 +53,13 @@ permissive one.
 ## Ten seconds, no runtime
 
 The engine depends on nothing from the host, so a domain can be watched deriving its tools
-without installing one — no runtime, no API key, no agent:
+without installing one — no runtime, no API key, no agent. The same domain, declared twice:
+with nobody authorised to write, then with one role declared.
+
+![The same domain, declared twice](docs/derivation.svg)
+
+The picture is generated from the command below, not drawn, so it cannot drift from the
+output (`node packages/ontology/scripts/render-demo-svg.ts`).
 
 ```sh
 node packages/ontology/scripts/show-derivation.ts packages/ontology/examples/project-delivery
