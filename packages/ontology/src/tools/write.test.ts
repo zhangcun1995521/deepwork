@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 import { loadGraph } from '../engine/graph.ts'
 import type { AuditEntry } from '../govern/audit.ts'
-import { isSafeId, roleOf, type RoleRule } from '../govern/permission.ts'
+import { ANY_CALLER, isSafeId, roleOf, type RoleRule } from '../govern/permission.ts'
 import type { DerivedToolSpec } from './derive.ts'
 import { deriveWriteTools } from './write.ts'
 
@@ -55,6 +55,25 @@ test('roleOf takes the longest matching prefix, and resolves nothing without a c
   assert.equal(roleOf('other-1', rules), undefined)
   assert.equal(roleOf(undefined, rules), undefined)
   assert.equal(roleOf('', rules), undefined)
+})
+
+test('a wildcard states the role, and names an agent the host did not name for us', () => {
+  const declared: readonly RoleRule[] = [{ prefix: ANY_CALLER, role: 'delivery-lead' }]
+
+  // The id is whatever the host generates; the deployment's statement does not depend on it.
+  assert.equal(roleOf('session-25651342-1547-4499', declared), 'delivery-lead')
+  assert.equal(roleOf('some-other-shape-9', declared), 'delivery-lead')
+
+  // It still loses to a real prefix, so naming one kind of agent is not all-or-nothing.
+  const mixed: readonly RoleRule[] = [...declared, { prefix: 'auditor-', role: 'auditor' }]
+  assert.equal(roleOf('auditor-1', mixed), 'auditor')
+  assert.equal(roleOf('session-1', mixed), 'delivery-lead')
+})
+
+test('an empty prefix is still ignored, so no existing configuration became permissive', () => {
+  // `*` is the wildcard. An empty prefix was ignored before it existed, and a change to a
+  // permission rule must not quietly widen one.
+  assert.equal(roleOf('session-1', [{ prefix: '', role: 'delivery-lead' }]), undefined)
 })
 
 test('an id is safe only when it cannot become a path', () => {

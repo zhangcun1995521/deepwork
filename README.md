@@ -169,6 +169,13 @@ To allow writes, say who may write. The role map is the gate:
 export DEEPWORK_ONTOLOGY_ROLES='[{"prefix":"session-","role":"delivery-lead"}]'
 ```
 
+A rule whose prefix is `*` matches every caller, and is how a deployment states the role it
+acts as instead of inferring one from ids it does not generate. Prefer it unless one process
+hosts several kinds of agent: an id-shaped rule is an assumption about the host's naming, and
+when the host renames its agents the rule stops matching and every write is refused — which
+reads as a permissions problem rather than as the stale assumption it is. `*` is one character,
+so any real prefix still beats it and a mixed deployment can name its agents individually.
+
 ## Seeing what a domain derives
 
 The panel lives inside DSH's own interface rather than beside it: one process, one origin,

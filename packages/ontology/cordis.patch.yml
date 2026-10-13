@@ -18,7 +18,9 @@
         ontologyRoot: !!js process.env.DEEPWORK_ONTOLOGY_ROOT ?? ''
         # Who may write is the gate on the write tool: an empty role map means the
         # tool is not registered at all, so an unconfigured deployment is a read-only
-        # one rather than a permissive one. Roles are matched by agent id prefix.
+        # one rather than a permissive one. Roles are matched by agent id prefix, and
+        # a prefix of `*` matches every caller — the way to state the role this
+        # deployment acts as rather than inferring one from ids the host generates.
         # Quoted because a bare scalar would let YAML read the ` : ` in the ternary as
         # a mapping separator.
         roles: !!js 'process.env.DEEPWORK_ONTOLOGY_ROLES ? JSON.parse(process.env.DEEPWORK_ONTOLOGY_ROLES) : []'

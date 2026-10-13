@@ -66,10 +66,28 @@ export type Permission =
   | { allowed: false; reason: DenialReason; detail: string }
 
 /**
+ * A rule whose prefix is this matches every caller, whatever id it arrives with.
+ *
+ * The point of it is to make the role a deployment *states* rather than one inferred from an
+ * id the deployment does not control. An id-shaped rule is an assumption about the host's
+ * naming: when the host changes how it names agents — as it does between a plugin route and a
+ * preset — the rule stops matching, and every write is refused. That failure reads as a
+ * permissions problem rather than as a stale assumption, which is the expensive part.
+ */
+export const ANY_CALLER = '*'
+
+/**
  * Resolve the role a caller acts under.
  *
  * The longest matching prefix wins, so a specific rule can carve an exception out of
- * a broad one without the rules having to be ordered carefully.
+ * a broad one without the rules having to be ordered carefully. {@link ANY_CALLER} is one
+ * character, so it loses to every real prefix and wins only when nothing else matches —
+ * a process hosting several kinds of agent can name them individually and let the wildcard
+ * cover whatever is left.
+ *
+ * An empty prefix stays ignored rather than becoming that wildcard. It was ignored before, and
+ * turning it into a grant now would make an existing configuration silently permissive, which
+ * is the one direction a change to a permission rule must never go.
  *
  * @param agentId - Identity the runtime reported, if any.
  * @param rules - Configured prefix-to-role map.
@@ -81,7 +99,9 @@ export function roleOf(
   if (agentId === undefined || agentId.length === 0) return undefined
   let best: RoleRule | undefined
   for (const rule of rules) {
-    if (rule.prefix.length === 0 || !agentId.startsWith(rule.prefix)) continue
+    const matches =
+      rule.prefix === ANY_CALLER || (rule.prefix.length > 0 && agentId.startsWith(rule.prefix))
+    if (!matches) continue
     if (best === undefined || rule.prefix.length > best.prefix.length) best = rule
   }
   return best?.role
