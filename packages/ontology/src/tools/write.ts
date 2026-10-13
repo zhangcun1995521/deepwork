@@ -88,80 +88,58 @@ function isMapping(value: unknown): value is Record<string, unknown> {
  * @param graph - Loaded domain graph. Written to, and refreshed in place.
  * @param options - Role map, audit sink and clock.
  */
-export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): DerivationResult {
+/** One write, as the tool passes it in. Actions reach the same path through this shape. */
+export interface WriteRequest {
+  /** Declared object type to write. */
+  type: string
+  /** Entity identity; also the value of the type's primary key field. */
+  id: string
+  /** Field values to write. */
+  data: Record<string, unknown>
+  /** Whole-number deltas for declared counters, when the call carries any. */
+  increment?: unknown
+  /** The caller, as the runtime reported it. */
+  call?: { agentId?: string }
+  /** Whether the entity must not exist, or must. Unset means either. */
+  expect?: 'create' | 'update'
+  /** Overrides the audit `action` field, so an action's write is traceable to that action. */
+  auditAction?: string
+  /**
+   * Roles this call additionally requires, on top of the target's `written_by`.
+   *
+   * A declared action may be narrower than the type it writes — "engineers may edit issues,
+   * only leads may record them" — and a narrowing that is not enforced is decoration. Only ever
+   * narrows: the target's own grant is checked first and this cannot widen it.
+   */
+  requireRole?: readonly string[]
+}
+
+/**
+ * Write one entity. The single write path in this plugin.
+ *
+ * Everything that governs a write lives here — authority, lifecycle, independent review,
+ * counters, required fields, provenance, audit — which is why a declared action delegates to
+ * this function instead of doing its own writing. A second write path would mean a second
+ * place for the governance to be forgotten, and the reference implementation shipped exactly
+ * that mistake: a counter bump that wrote the file directly and bypassed its own ACL.
+ */
+export function writeEntity(
+  graph: OntologyGraph,
+  options: WriteOptions,
+  request: WriteRequest,
+): QueryResult {
   const roles = options.roles ?? []
   const now = options.now ?? ((): Date => new Date())
-  const warnings: string[] = []
-  const names = typeNames(graph)
-
-  if (names.length === 0) {
-    return { tools: [], warnings: ['no object types are declared, so no write tool can be derived'] }
-  }
-
-  const writable = names.filter((name) => (graph.schema.objectTypes.get(name)?.writtenBy.length ?? 0) > 0)
-  if (writable.length === 0) {
-    warnings.push(
-      'no object type declares written_by, so every write will be refused; ' +
-        'declare written_by on a type to make it writable',
-    )
-  }
-
-  const tool: DerivedToolSpec = {
-    name: 'ontology_write',
-    description:
-      'Create or update one entity in the ontology. Which types may be written is declared by the ' +
-      'domain, not by this tool: a caller whose role is not granted on the target type is refused, ' +
-      'and the refusal names the role it wanted. Relations are fields — putting a relation\'s field ' +
-      'name in `data` asserts an edge — and fields the type declares as required must be present. ' +
-      `Types: ${names.join(', ')}.`,
-    parameters: {
-      type: 'object',
-      properties: {
-        type: {
-          type: 'string',
-          description: 'Declared object type name.',
-          enum: names,
-        },
-        id: {
-          type: 'string',
-          description:
-            'Identity of the entity. Created when nothing has this id, merged into the existing ' +
-            'entity when something does. May not contain a path separator.',
-        },
-        data: {
-          type: 'object',
-          description:
-            'Field values to write. Relation fields name the related entity ids. The identity field ' +
-            'is set from `id` and cannot be overridden here.',
-        },
-        increment: {
-          type: 'object',
-          description:
-            'Whole-number deltas added to declared counters, e.g. { "hits": 1 }. A field is a ' +
-            'counter when the domain declares increment_by on it, and that declaration — not ' +
-            'written_by — decides who may increment. Counters can also be set outright through ' +
-            '`data` by a role that may write the type.',
-        },
-      },
-      required: ['type', 'id', 'data'],
-    },
-    outputSchema: RESULT_SCHEMA,
-    render: (args, value) =>
-      renderResult(value, options.maxRenderedValueLength ?? 120, (type) =>
-        graph.schema.objectTypes.get(type)?.primaryKey,
-      ),
-    execute: (args, call) => {
-      const typeName = requireString(args, 'type')
-      const id = requireString(args, 'id')
-      const data = args.data
-
-      if (!isMapping(data)) {
-        throw new Error('argument "data" is required and must be an object of field values')
-      }
+      const typeName = request.type
+      const id = request.id
+      const data = request.data
+      const call = request.call
 
       const type = graph.schema.objectTypes.get(typeName)
       if (type === undefined) {
-        throw new Error(`unknown object type "${typeName}"; declared types are: ${names.join(', ')}`)
+        throw new Error(
+          `unknown object type "${typeName}"; declared types are: ${typeNames(graph).join(', ')}`,
+        )
       }
 
       const file = join(graph.root, type.directory, `${id}.yaml`)
@@ -173,7 +151,7 @@ export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): D
       const deny = (reason: DenialReason, detail: string): never => {
         options.audit({
           at: now().toISOString(),
-          action: 'ontology_write',
+          action: request.auditAction ?? 'ontology_write',
           ...(call?.agentId === undefined ? {} : { agentId: call.agentId }),
           ...(attemptedRole === undefined ? {} : { role: attemptedRole }),
           type: typeName,
@@ -184,6 +162,17 @@ export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): D
           detail,
         })
         throw new Error(`write denied (${reason}): ${detail}`)
+      }
+
+      // A create that would land on an existing entity is not a create, and an update to
+      // something absent is not an update. Checked before authority, because "does this
+      // exist" is a question about the world, not about the caller.
+      const present = graph.byId.get(`${type.name}:${id}`) !== undefined
+      if (request.expect === 'create' && present) {
+        deny('already-exists', `"${type.name}" already has an entity "${id}"`)
+      }
+      if (request.expect === 'update' && !present) {
+        deny('not-found', `"${type.name}" has no entity "${id}"`)
       }
 
       // Id safety is separate from authority on purpose: the id comes from the model
@@ -198,7 +187,7 @@ export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): D
       // counter from code that wrote the file directly; here it is a write like any other,
       // covered by the refusals above and the audit below.
       const increments: [string, number][] = []
-      const rawIncrement = (args as Record<string, unknown>).increment
+      const rawIncrement = request.increment
       if (rawIncrement !== undefined && !isMapping(rawIncrement)) {
         deny('invalid-increment', '"increment" must be an object of field names to whole-number deltas')
       }
@@ -249,6 +238,18 @@ export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): D
 
       if (!decision.allowed) deny(decision.reason, decision.detail)
       const callerRole = decision.allowed ? decision.role : undefined
+
+      // A narrowing on top of the type's grant, not a replacement for it.
+      if (
+        request.requireRole !== undefined &&
+        (callerRole === undefined || !request.requireRole.includes(callerRole))
+      ) {
+        deny(
+          'role-not-permitted',
+          `this call permits ${request.requireRole.join(', ')}; caller resolved to ` +
+            `${callerRole === undefined ? 'no role' : `"${callerRole}"`}`,
+        )
+      }
 
       // The identity field is taken from `id`, never from `data`, so a caller cannot
       // write an entity whose file name and identity disagree.
@@ -330,7 +331,7 @@ export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): D
 
       options.audit({
         at: now().toISOString(),
-        action: 'ontology_write',
+        action: request.auditAction ?? 'ontology_write',
         ...(call?.agentId === undefined ? {} : { agentId: call.agentId }),
         ...(attemptedRole === undefined ? {} : { role: attemptedRole }),
         type: typeName,
@@ -356,6 +357,82 @@ export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): D
         truncated: false,
       }
       return result
+}
+
+export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): DerivationResult {
+  const roles = options.roles ?? []
+  const now = options.now ?? ((): Date => new Date())
+  const warnings: string[] = []
+  const names = typeNames(graph)
+
+  if (names.length === 0) {
+    return { tools: [], warnings: ['no object types are declared, so no write tool can be derived'] }
+  }
+
+  const writable = names.filter((name) => (graph.schema.objectTypes.get(name)?.writtenBy.length ?? 0) > 0)
+  if (writable.length === 0) {
+    warnings.push(
+      'no object type declares written_by, so every write will be refused; ' +
+        'declare written_by on a type to make it writable',
+    )
+  }
+
+  const tool: DerivedToolSpec = {
+    name: 'ontology_write',
+    description:
+      'Create or update one entity in the ontology. Which types may be written is declared by the ' +
+      'domain, not by this tool: a caller whose role is not granted on the target type is refused, ' +
+      'and the refusal names the role it wanted. Relations are fields — putting a relation\'s field ' +
+      'name in `data` asserts an edge — and fields the type declares as required must be present. ' +
+      `Types: ${names.join(', ')}.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          description: 'Declared object type name.',
+          enum: names,
+        },
+        id: {
+          type: 'string',
+          description:
+            'Identity of the entity. Created when nothing has this id, merged into the existing ' +
+            'entity when something does. May not contain a path separator.',
+        },
+        data: {
+          type: 'object',
+          description:
+            'Field values to write. Relation fields name the related entity ids. The identity field ' +
+            'is set from `id` and cannot be overridden here.',
+        },
+        increment: {
+          type: 'object',
+          description:
+            'Whole-number deltas added to declared counters, e.g. { "hits": 1 }. A field is a ' +
+            'counter when the domain declares increment_by on it, and that declaration — not ' +
+            'written_by — decides who may increment. Counters can also be set outright through ' +
+            '`data` by a role that may write the type.',
+        },
+      },
+      required: ['type', 'id', 'data'],
+    },
+    outputSchema: RESULT_SCHEMA,
+    render: (args, value) =>
+      renderResult(value, options.maxRenderedValueLength ?? 120, (type) =>
+        graph.schema.objectTypes.get(type)?.primaryKey,
+      ),
+    execute: (args, call) => {
+      const data = args.data
+      if (!isMapping(data)) {
+        throw new Error('argument "data" is required and must be an object of field values')
+      }
+      return writeEntity(graph, options, {
+        type: requireString(args, 'type'),
+        id: requireString(args, 'id'),
+        data,
+        ...(args.increment === undefined ? {} : { increment: args.increment }),
+        ...(call === undefined ? {} : { call }),
+      })
     },
   }
 

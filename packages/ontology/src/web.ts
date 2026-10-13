@@ -20,6 +20,7 @@
 
 import type { OntologyGraph } from './engine/graph.ts'
 import type { RoleRule } from './govern/permission.ts'
+import { deriveActionTools } from './tools/actions.ts'
 import { deriveTools, type DeriveOptions, type DerivedToolSpec } from './tools/derive.ts'
 import { deriveWriteTools } from './tools/write.ts'
 
@@ -43,6 +44,7 @@ export interface DomainSnapshot {
     linkTypes: number
     declaredFunctions: number
     declaredActions: number
+    derivedActions: number
     readTools: number
     writeTools: number
   }
@@ -50,6 +52,13 @@ export interface DomainSnapshot {
     load: string[]
     derivation: string[]
   }
+  /** Declared actions, as the domain declared them. */
+  actions: Array<{
+    name: string
+    use: 'create' | 'update'
+    target: string
+    by: string[]
+  }>
   objectTypes: Array<{
     name: string
     primaryKey: string
@@ -136,7 +145,15 @@ export function domainSnapshot(
       objectTypes: graph.schema.objectTypes.size,
       linkTypes: graph.schema.linkTypes.size,
       declaredFunctions: Object.keys(graph.schema.functions).length,
-      declaredActions: Object.keys(graph.schema.actionTypes).length,
+      // Declared and derived are the same number by construction now. Kept as two fields so a
+      // regression that stops deriving one of them shows up as a difference rather than as a
+      // silently smaller tool list.
+      declaredActions: graph.schema.actions.length,
+      // An action is a write, so with no roles there is nothing to derive. Reporting the
+      // schema's count here would make the summary claim a capability the deployment does not
+      // have — the exact "declared but inert" problem this whole change exists to remove.
+      derivedActions:
+        roles.length === 0 ? 0 : deriveActionTools(graph, { roles, audit: () => {} }).tools.length,
       readTools: reads.tools.length,
       writeTools: writes.tools.length,
     },
@@ -182,6 +199,18 @@ export function domainSnapshot(
       ...(link.description === undefined ? {} : { description: link.description }),
       edges: graph.links.filter((candidate) => candidate.type === link.name).length,
     })),
+    actions:
+      roles.length === 0
+        ? []
+        : deriveActionTools(graph, { roles, audit: () => {} }).tools.map((tool) => {
+            const declared = graph.schema.actions.find((action) => action.name === tool.name)
+            return {
+              name: tool.name,
+              use: declared?.use ?? 'update',
+              target: declared?.target ?? '',
+              by: declared?.by ?? [],
+            }
+          }),
     tools: {
       read: reads.tools.map(toView),
       write: writes.tools.map(toView),

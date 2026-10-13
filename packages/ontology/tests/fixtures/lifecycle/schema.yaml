@@ -57,3 +57,11 @@ object_types:
 
 link_types: {}
 functions: {}
+
+action_types:
+  # The same move as the lifecycle transition, offered as an action. It exists to prove the
+  # point of actions being a shell over the write path: calling it does not take a shortcut
+  # past the review requirement.
+  verify_pattern:
+    use: update
+    target: Pattern

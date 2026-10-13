@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="880" height="834" viewBox="0 0 880 834" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13">
-  <rect x="0" y="0" width="880" height="834" rx="12" fill="#0f1115"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="934" viewBox="0 0 880 934" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13">
+  <rect x="0" y="0" width="880" height="934" rx="12" fill="#0f1115"/>
   <rect x="0" y="0" width="880" height="34" rx="12" fill="#161a21"/>
   <rect x="0" y="22" width="880" height="12" fill="#161a21"/>
   <circle cx="22" cy="17" r="6" fill="#ff6b6b"/>
@@ -16,25 +16,28 @@
 <text x="22" y="246" xml:space="preserve" fill="#c8d3e0">         ontology_links</text>
 <text x="22" y="266" xml:space="preserve" fill="#c8d3e0">         ontology_query</text>
 <text x="22" y="286" xml:space="preserve" fill="#f0a53a">         no write tool — with no roles configured, the deployment is read-only</text>
-<text x="22" y="326" xml:space="preserve" fill="#c8d3e0">         Customer     key=customer_id    instances=2   may write: delivery-lead</text>
-<text x="22" y="346" xml:space="preserve" fill="#c8d3e0">         Project      key=project_id     instances=3   may write: delivery-lead, system</text>
-<text x="22" y="366" xml:space="preserve" fill="#c8d3e0">         Person       key=employee_id    instances=3   may write: delivery-lead</text>
-<text x="22" y="386" xml:space="preserve" fill="#c8d3e0">         Issue        key=issue_id       instances=5   may write: delivery-lead, engineer</text>
-<text x="22" y="406" xml:space="preserve" fill="#c8d3e0">         Document     key=document_id    instances=3   may write: delivery-lead</text>
-<text x="22" y="442" xml:space="preserve" fill="#37c98f">$ npm run demo -- --roles '[{&quot;prefix&quot;:&quot;session-&quot;,&quot;role&quot;:&quot;delivery-lead&quot;}]'</text>
-<text x="22" y="462" xml:space="preserve" fill="#6b7684"># one role declared</text>
-<text x="22" y="486" xml:space="preserve" fill="#9aa4b2">domain   packages/ontology/examples/project-delivery</text>
-<text x="22" y="506" xml:space="preserve" fill="#9aa4b2">         5 object types, 16 instances, 6 relations (22 edges)</text>
-<text x="22" y="546" xml:space="preserve" fill="#c8d3e0">tools    4 read, 1 write</text>
-<text x="22" y="566" xml:space="preserve" fill="#c8d3e0">         ontology_get</text>
-<text x="22" y="586" xml:space="preserve" fill="#c8d3e0">         ontology_find</text>
-<text x="22" y="606" xml:space="preserve" fill="#c8d3e0">         ontology_links</text>
-<text x="22" y="626" xml:space="preserve" fill="#c8d3e0">         ontology_query</text>
-<text x="22" y="646" xml:space="preserve" fill="#37c98f">         ontology_write   (registered because roles are configured)</text>
-<text x="22" y="686" xml:space="preserve" fill="#c8d3e0">objects</text>
-<text x="22" y="706" xml:space="preserve" fill="#c8d3e0">         Customer     key=customer_id    instances=2   may write: delivery-lead</text>
-<text x="22" y="726" xml:space="preserve" fill="#c8d3e0">         Project      key=project_id     instances=3   may write: delivery-lead, system</text>
-<text x="22" y="746" xml:space="preserve" fill="#c8d3e0">         Person       key=employee_id    instances=3   may write: delivery-lead</text>
-<text x="22" y="766" xml:space="preserve" fill="#c8d3e0">         Issue        key=issue_id       instances=5   may write: delivery-lead, engineer</text>
-<text x="22" y="786" xml:space="preserve" fill="#c8d3e0">         Document     key=document_id    instances=3   may write: delivery-lead</text>
+<text x="22" y="346" xml:space="preserve" fill="#c8d3e0">         Customer     key=customer_id    instances=2   may write: delivery-lead</text>
+<text x="22" y="366" xml:space="preserve" fill="#c8d3e0">         Project      key=project_id     instances=3   may write: delivery-lead, system</text>
+<text x="22" y="386" xml:space="preserve" fill="#c8d3e0">         Person       key=employee_id    instances=3   may write: delivery-lead</text>
+<text x="22" y="406" xml:space="preserve" fill="#c8d3e0">         Issue        key=issue_id       instances=5   may write: delivery-lead, engineer</text>
+<text x="22" y="426" xml:space="preserve" fill="#c8d3e0">         Document     key=document_id    instances=3   may write: delivery-lead</text>
+<text x="22" y="462" xml:space="preserve" fill="#37c98f">$ npm run demo -- --roles '[{&quot;prefix&quot;:&quot;session-&quot;,&quot;role&quot;:&quot;delivery-lead&quot;}]'</text>
+<text x="22" y="482" xml:space="preserve" fill="#6b7684"># one role declared</text>
+<text x="22" y="506" xml:space="preserve" fill="#9aa4b2">domain   packages/ontology/examples/project-delivery</text>
+<text x="22" y="526" xml:space="preserve" fill="#9aa4b2">         5 object types, 16 instances, 6 relations (22 edges)</text>
+<text x="22" y="566" xml:space="preserve" fill="#c8d3e0">tools    4 read, 1 write</text>
+<text x="22" y="586" xml:space="preserve" fill="#c8d3e0">         ontology_get</text>
+<text x="22" y="606" xml:space="preserve" fill="#c8d3e0">         ontology_find</text>
+<text x="22" y="626" xml:space="preserve" fill="#c8d3e0">         ontology_links</text>
+<text x="22" y="646" xml:space="preserve" fill="#c8d3e0">         ontology_query</text>
+<text x="22" y="666" xml:space="preserve" fill="#37c98f">         ontology_write   (registered because roles are configured)</text>
+<text x="22" y="706" xml:space="preserve" fill="#e6e8eb">actions  2 derived of 2 declared</text>
+<text x="22" y="726" xml:space="preserve" fill="#c8d3e0">         record_issue           create  Issue        by: delivery-lead, engineer</text>
+<text x="22" y="746" xml:space="preserve" fill="#c8d3e0">         update_project_status  update  Project      by: delivery-lead, system</text>
+<text x="22" y="786" xml:space="preserve" fill="#c8d3e0">objects</text>
+<text x="22" y="806" xml:space="preserve" fill="#c8d3e0">         Customer     key=customer_id    instances=2   may write: delivery-lead</text>
+<text x="22" y="826" xml:space="preserve" fill="#c8d3e0">         Project      key=project_id     instances=3   may write: delivery-lead, system</text>
+<text x="22" y="846" xml:space="preserve" fill="#c8d3e0">         Person       key=employee_id    instances=3   may write: delivery-lead</text>
+<text x="22" y="866" xml:space="preserve" fill="#c8d3e0">         Issue        key=issue_id       instances=5   may write: delivery-lead, engineer</text>
+<text x="22" y="886" xml:space="preserve" fill="#c8d3e0">         Document     key=document_id    instances=3   may write: delivery-lead</text>
 </svg>

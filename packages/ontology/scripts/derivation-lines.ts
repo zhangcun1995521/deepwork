@@ -35,6 +35,26 @@ export function derivationLines(root: string, roles: RoleRule[] = []): string[] 
     lines.push('         no write tool — with no roles configured, the deployment is read-only')
   }
 
+  const actions = snapshot.actions
+  const declared = snapshot.summary.declaredActions
+  if (declared > 0) {
+    const readOnly = snapshot.roles.length === 0
+    lines.push('')
+    lines.push(
+      `actions  ${actions.length} derived of ${declared} declared` +
+        (readOnly ? '   (no roles configured: read-only, so none is derived)' : ''),
+    )
+    for (const action of actions) {
+      lines.push(
+        `         ${action.name.padEnd(22)} ${action.use.padEnd(7)} ${action.target.padEnd(12)} ` +
+          `by: ${action.by.length === 0 ? '(nobody)' : action.by.join(', ')}`,
+      )
+    }
+    if (actions.length < declared && !readOnly) {
+      lines.push('         some declared actions did not derive a tool — see the warnings')
+    }
+  }
+
   lines.push('')
   lines.push('objects')
   for (const type of snapshot.objectTypes) {

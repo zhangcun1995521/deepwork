@@ -26,6 +26,7 @@ import {
   type QueryResult,
   type ToolArgs,
 } from './derive.ts'
+import { deriveActionTools } from './actions.ts'
 import { deriveWriteTools, type WriteOptions } from './write.ts'
 
 /** Content the runtime shows the model, in the shape DSH expects from `render`. */
@@ -132,11 +133,18 @@ export function registerOntologyTools(
     options.writes === undefined
       ? { tools: [], warnings: [] }
       : deriveWriteTools(graph, options.writes)
+  // Actions come with the write half, because an action is a write. A deployment with no
+  // roles gets neither, which is the same promise as everywhere else: unconfigured means
+  // read-only rather than permissive.
+  const actions =
+    options.writes === undefined
+      ? { tools: [], warnings: [] }
+      : deriveActionTools(graph, options.writes)
 
   const registered: string[] = []
   const failed: string[] = []
 
-  for (const tool of [...reads.tools, ...writes.tools]) {
+  for (const tool of [...reads.tools, ...writes.tools, ...actions.tools]) {
     try {
       registry.register({
         name: tool.name,
@@ -159,5 +167,9 @@ export function registerOntologyTools(
     }
   }
 
-  return { registered, failed, warnings: [...reads.warnings, ...writes.warnings] }
+  return {
+    registered,
+    failed,
+    warnings: [...reads.warnings, ...writes.warnings, ...actions.warnings],
+  }
 }

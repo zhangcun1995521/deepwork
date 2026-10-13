@@ -107,6 +107,32 @@ export interface LinkTypeDecl {
 }
 
 /** A parsed domain schema. */
+/**
+ * A declared action: a named way to write, rather than the one generic write tool.
+ *
+ * The ontology model is objects, links, actions, functions. Objects, links and functions
+ * were real here before this; `action_types` was parsed and counted but nothing derived from
+ * it, which meant a domain could declare an action, see it in the panel's summary, and get
+ * nothing when calling it. A declaration that does not take effect is worse than no
+ * declaration, because the domain author believes it worked.
+ *
+ * An action is deliberately a thin shell over the same write path as `ontology_write`:
+ * `create` and `update` add a precondition, and the permission, lifecycle, review, audit and
+ * provenance machinery is the machinery that already exists.
+ */
+export interface ActionDecl {
+  /** Action name, as declared under `action_types`. */
+  name: string
+  /** Whether the entity must not exist yet, or must already exist. */
+  use: 'create' | 'update'
+  /** Object type the action writes. */
+  target: string
+  /** Roles permitted to invoke it. Defaults to the target type's `written_by`. */
+  by: string[]
+  /** Fields the caller supplies. Defaults to the target's required fields. */
+  fields: string[]
+}
+
 export interface OntologySchema {
   /** Domain root the schema was read from. */
   root: string
@@ -120,6 +146,8 @@ export interface OntologySchema {
   functions: Record<string, unknown>
   /** Declared actions, kept raw — typed by the derivation layer. */
   actionTypes: Record<string, unknown>
+  /** Declared actions that passed validation. Invalid ones are warnings, not actions. */
+  actions: ActionDecl[]
   /** The document as parsed. */
   raw: Record<string, unknown>
   /** Non-fatal problems found while parsing. Never empty by accident. */
@@ -294,6 +322,77 @@ export function parseSchema(root: string): OntologySchema {
     })
   }
 
+  // ── action types ────────────────────────────────────────────────────────────
+  // Validated here rather than at call time, so a domain learns at load that an action
+  // points at a type that does not exist, or names a field nobody declared. The rules that
+  // matter are the ones this module already knows about: the target, and the fields.
+  const actions: ActionDecl[] = []
+  const rawActionTypes = document.action_types
+  if (rawActionTypes !== undefined && !isMapping(rawActionTypes)) {
+    warnings.push('"action_types" must be a mapping; ignoring it entirely')
+  }
+  for (const [name, declaration] of Object.entries(asFieldMap(rawActionTypes))) {
+    if (!isMapping(declaration)) {
+      warnings.push(`action "${name}" is not a mapping; skipped`)
+      continue
+    }
+    const use = declaration.use
+    if (use !== 'create' && use !== 'update') {
+      warnings.push(
+        `action "${name}" declares use "${String(use)}", which is neither create nor update; skipped`,
+      )
+      continue
+    }
+    const target = typeof declaration.target === 'string' ? declaration.target : ''
+    const type = objectTypes.get(target)
+    if (type === undefined) {
+      warnings.push(
+        `action "${name}" targets "${target || '(none)'}", which is not a declared object type; skipped`,
+      )
+      continue
+    }
+
+    const declaredFields = asStringList(declaration.fields) ?? []
+    const declaredBy = asStringList(declaration.by) ?? []
+    // Defaults that follow from the target, so a domain author writes the minimum: who may
+    // write the type may invoke actions on it, and an action takes the fields a caller must
+    // supply anyway.
+    // Defaults differ by intent, because the intent does. A create has to supply a whole
+    // valid entity, so it takes the required fields. An update changes some of them, and
+    // the write path merges with what is on disk — so it offers every field and requires
+    // none. Declaring `fields` explicitly overrides both.
+    const fields =
+      declaredFields.length > 0
+        ? declaredFields
+        : use === 'create'
+          ? type.requiredFields.filter((field) => field !== type.primaryKey)
+          : Object.keys(type.fields).filter((field) => field !== type.primaryKey)
+    const by = declaredBy.length > 0 ? declaredBy : type.writtenBy
+
+    const unknownFields = fields.filter((field) => type.fields[field] === undefined)
+    if (unknownFields.length > 0) {
+      warnings.push(
+        `action "${name}" supplies fields ${unknownFields.join(', ')}, which "${type.name}" does not ` +
+          'declare; skipped',
+      )
+      continue
+    }
+    if (fields.length === 0) {
+      warnings.push(
+        `action "${name}" supplies no fields: "${type.name}" declares no required fields beyond its ` +
+          'identity, so the action would write nothing',
+      )
+    }
+    if (by.length === 0) {
+      warnings.push(
+        `action "${name}" names no roles and its target declares no written_by, so nobody may ` +
+          'invoke it',
+      )
+    }
+
+    actions.push({ name, use, target, by, fields })
+  }
+
   const version = document.version
   return {
     root,
@@ -302,6 +401,7 @@ export function parseSchema(root: string): OntologySchema {
     linkTypes,
     functions: isMapping(document.functions) ? document.functions : {},
     actionTypes: isMapping(document.action_types) ? document.action_types : {},
+    actions,
     raw: document,
     warnings,
   }

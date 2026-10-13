@@ -39,7 +39,7 @@ const PANELS = [
         { prefix: 'session-', role: 'delivery-lead' },
       ]),
     ),
-    keep: (line: string) => line === '' || /^domain|^ {9}|^tools|^objects/.test(line),
+    keep: (line: string) => line === '' || /^domain|^ {9}|^tools|^actions|^objects/.test(line),
   },
 ]
 
@@ -80,6 +80,8 @@ function colour(line: string): string {
   if (/^domain|^\s+\d+ object types/.test(line)) return '#9aa4b2'
   if (line.includes('requires an independent verdict')) return '#f0a53a'
   if (line.includes('states:')) return '#5b8cff'
+  if (/^actions\s/.test(line)) return '#e6e8eb'
+  if (line.includes('no roles configured: read-only')) return '#9aa4b2'
   return '#c8d3e0'
 }
 

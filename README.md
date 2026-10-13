@@ -84,9 +84,9 @@ objects
          Document     key=document_id    instances=3   may write: delivery-lead
 ```
 
-Say who may write and the write tool appears. Declare a lifecycle and the states arrive with
-the rules that govern them — who may move something, and which moves need somebody else's
-verdict:
+Say who may write and the write tool appears, along with a tool per declared action. Declare a
+lifecycle and the states arrive with the rules that govern them — who may move something, and
+which moves need somebody else's verdict:
 
 ```sh
 node packages/ontology/scripts/show-derivation.ts packages/ontology/tests/fixtures/review-delivery   --roles '[{"prefix":"session-","role":"engineer"}]'
@@ -124,12 +124,13 @@ Working and demonstrated, not finished.
 | Declared lifecycle — states, transitions, who may move them | ✅ enforced on the write path; a real refusal and a real promotion observed, both audited |
 | Reads default to the vouched-for state | ✅ and say how many they left out, rather than narrowing quietly |
 | Declared counters — who may record usage | ✅ granted apart from `written_by`; verified live by a role that may count and may not author |
+| Declared actions — a named way to write, not only the generic tool | ✅ one tool per declaration; verified live, preconditions and role narrowing included |
 | Declared review — a move that needs an independent verdict | ✅ enforced against provenance the platform recorded; a promotion went through on another session's verdict and was refused without one |
 | Example domain — the demo scenario | ✅ end to end |
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-124 tests in total.
+134 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
@@ -206,6 +207,17 @@ between them and the roles allowed to make each move are read from the schema an
 the same write path as any other write — so the ACL and the audit already cover promotions,
 with no second path to forget about. Reads honour a declared default state, and report how
 many entities they left out rather than narrowing quietly.
+
+**An action is a declaration, and it is not a second write path.** The ontology model is
+objects, links, actions and functions; `action_types` used to be parsed and counted while
+nothing derived from it, so a domain could declare an action, see it in the summary, and get
+nothing when calling it. Actions now derive a tool each — with intent the generic write tool
+does not carry: `create` refuses an identity that already exists, `update` refuses one that does
+not, and `by` narrows the type's grant rather than replacing it. Every one of them calls the same
+function the generic write tool calls, which is why the permissions, lifecycle, review, counters,
+audit and provenance above apply to an action without being restated. Verified live: a create
+that collided was refused with `already-exists`, a role outside the action's grant was refused
+with `role-not-permitted`, and both appear in the trail under the action's own name.
 
 **Independent review is checked against provenance, not against a claim.** A move can require
 a passing verdict, and the verdict must have been produced by someone other than the caller.

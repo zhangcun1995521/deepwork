@@ -54,6 +54,9 @@ export type DenialReason =
   | 'review-required'
   | 'self-review-not-allowed'
   | 'review-producer-unknown'
+  // Action preconditions: the world was not in the state the action assumed.
+  | 'already-exists'
+  | 'not-found'
 
 /** The outcome of a permission check. */
 export type Permission =
