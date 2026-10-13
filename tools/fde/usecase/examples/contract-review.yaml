@@ -1,0 +1,40 @@
+id: UC-003
+name: First-pass review of incoming supplier contracts
+owner: Legal team, no individual named yet
+context: >
+  Contract review is slow and senior-lawyer dependent. The obvious proposal is
+  an LLM that reads each contract and flags risky clauses. This example is here
+  to show what the rubric does with a use case that sounds attractive and is not
+  ready.
+
+dimensions:
+  value:
+    score: 5
+    evidence: >-
+      Reviewer time per contract is known and the volume is stable, so the
+      saving would be real.
+  feasibility:
+    score: 3
+    evidence: >-
+      Clause classification is a known technique, but the contract templates
+      vary by counterparty and no inventory of variants exists.
+  data:
+    score: 1
+    evidence: >-
+      Contracts sit in a controlled repository; no sample could be extracted for
+      development, and legal would not approve a third-party model call on the
+      text. Access is a hope, not a query.
+  verifiability:
+    score: 2
+    evidence: >-
+      No baseline: no record of which clauses the current reviewers actually flag,
+      so there is no number that would count as success.
+  adoption:
+    score: 2
+    evidence: >-
+      The people who would need to change their review habit have not been
+      involved; the request came from a sponsor.
+
+blockers:
+  - No lawful path to the document text for development or evaluation.
+unknowns: []

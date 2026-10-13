@@ -1,0 +1,61 @@
+# The qualification rubric.
+#
+# Every dimension carries a weight, the question it asks, and the action to take
+# when it scores low or has no evidence. Weights are normalised at runtime, so
+# they do not have to sum to 1.0 — but a test asserts they do, so that editing
+# this file cannot silently change the meaning of a score.
+#
+# Scores are 0-5 and are human judgements. The point is not the number; it is
+# that a number requires a written reason next to it.
+
+thresholds:
+  go: 4.0            # go only when the weighted score clears this
+  validate: 3.0      # below this, the answer is decline
+
+dimensions:
+
+  value:
+    label: Business value
+    weight: 0.30
+    question: Is there a quantified gain, on a process that matters, for enough people?
+    low_action: >-
+      Get the customer to name the number: hours per week, error rate, cost per
+      transaction. If nobody will put a number on it, the use case has no
+      business case and no way to be judged later.
+    floor: 2         # a use case with no quantified gain is not a use case
+
+  feasibility:
+    label: Technical feasibility
+    weight: 0.20
+    question: Can this be built with known techniques, on this data, within the window?
+    low_action: >-
+      Reduce scope until the answer is yes: one scenario, one data source, one
+      user. A demo of the hard part is worth more than a plan for the whole.
+
+  data:
+    label: Data readiness
+    weight: 0.20
+    question: Does the data exist, can we get it, and is it good enough?
+    low_action: >-
+      Prove access with a real query against the real system, not a promise that
+      access will be granted. Data readiness is the most common cause of a
+      stalled pilot.
+    floor: 1         # scoring at or below this floor forces a decline
+
+  verifiability:
+    label: Verifiability
+    weight: 0.20
+    question: Can we tell whether the result is good — before we build it?
+    low_action: >-
+      Write the acceptance test first: a case set, a baseline, and the number
+      that counts as success. Without this, the pilot ends in an opinion.
+    requires_baseline: true
+
+  adoption:
+    label: Adoption
+    weight: 0.10
+    question: Is there a named owner, and will people change how they work?
+    low_action: >-
+      Find the owner who loses the work, not the sponsor who gains the credit.
+      And check whether the workflow change is inside the tool or outside it.
+    floor: 1

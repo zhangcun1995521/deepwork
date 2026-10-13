@@ -1,0 +1,40 @@
+id: UC-001
+name: Cross-session memory for an in-car assistant
+owner: Agent platform team (Master Agent) with the memory service developer
+context: >
+  The in-car assistant forgets everything between sessions, so personalisation
+  never accumulates and users repeat themselves. One car is shared by a family,
+  so preferences must not leak between drivers.
+
+dimensions:
+  value:
+    score: 4
+    evidence: >-
+      Every session restarts from zero; the product goal is assistant
+      personalisation, which is unreachable without memory. No hours-saved
+      number exists yet — the value is a capability, not a saving.
+  feasibility:
+    score: 4
+    evidence: >-
+      Built as FastAPI + mem0 over PostgreSQL/pgvector; store, search, clear and
+      batch extraction all run against a real environment.
+  data:
+    score: 4
+    evidence: >-
+      Session history is available from the platform's own conversation store,
+      read with a service key; no data leaves the tenant.
+  verifiability:
+    score: 3
+    evidence: >-
+      A test set exists but the extraction accuracy and recall were never
+      measured against it, and the set itself was found to be mostly
+      car-control commands with no memory value.
+  adoption:
+    score: 3
+    evidence: >-
+      Depends on the Master Agent calling the service through function calling;
+      the platform team owns that call site.
+
+blockers: []
+unknowns:
+  - Retention and deletion policy for stored personal preferences.

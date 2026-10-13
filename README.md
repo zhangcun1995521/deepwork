@@ -117,6 +117,7 @@ arbitrary-read request.
 | `packages/ontology/examples/project-delivery` | a complete synthetic domain to point at |
 | `apps/workspace` | the workspace UI: point it at a domain and see the derived tool surface |
 | `packages/probe` | the smallest possible plugin, kept as the smoke test for the plugin route |
+| `tools/fde` | the FDE toolkit: qualify a use case before anything gets built (Python, runs standalone) |
 | `PROJECT_STATE.md` | the working record: decisions, verified facts, environment pitfalls |
 
 ## Design notes
@@ -140,6 +141,20 @@ Two rules that look like details and are not:
 
 Full detail, including the declarations and the governance model, is in
 [`packages/ontology/README.md`](packages/ontology/README.md).
+
+## Applications
+
+The platform is meant to be used, so it ships with applications built on it rather than beside it.
+
+**`tools/fde` — qualifying a use case before building it.** An ontology is cheap to extend and expensive to get wrong: the usual failure is not a bad agent, it is a use case that was never worth doing, discovered three weeks in. This tool scores a candidate use case across five weighted dimensions, applies hard floors, and returns *go*, *validate first* or *decline* — naming the evidence that is missing rather than averaging it away.
+
+A dimension with no written evidence counts as **unknown**, and any unknown caps the decision. That is the whole point: unknown is not the same as zero, and a silent downgrade is how a pilot becomes a promise nobody can keep.
+
+```sh
+python tools/fde/usecase/score.py tools/fde/usecase/examples/sample-service.yaml
+```
+
+It is Python and runs standalone — no runtime, no API key — so it works with or without DSH present. Everything else it needs is in [`tools/fde/README.md`](tools/fde/README.md).
 
 ## Positioning
 

@@ -1,0 +1,41 @@
+id: UC-002
+name: First-pass triage of production tickets across a large service estate
+owner: Operations team that currently runs triage by hand
+context: >
+  Tickets arrive with steps to reproduce and often a screen recording, rarely a
+  trace id. Triage starts with half an hour of manual searching across logs,
+  while the actual causal reasoning takes the last two minutes.
+
+dimensions:
+  value:
+    score: 5
+    evidence: >-
+      The manual cost is documented per ticket (search time dominates, reasoning
+      is a small fraction), and the estate spans a large number of services
+      across many namespaces, so the saving repeats.
+  feasibility:
+    score: 4
+    evidence: >-
+      Implemented as a query-guarded log agent plus a case base; already produced
+      real reports against real tickets.
+  data:
+    score: 5
+    evidence: >-
+      Logs are queryable through the existing platform API, and a case base of
+      historical tickets is available for lookup.
+  verifiability:
+    score: 4
+    evidence: >-
+      Historical tickets can be replayed and the conclusion compared with the
+      root cause that was eventually confirmed. A case (a missing field mapping
+      causing a null pointer) was reproduced end to end and matched.
+  adoption:
+    score: 3
+    evidence: >-
+      The workflow change sits with the operations team, which must move from
+      searching by hand to reviewing a drafted conclusion; no formal owner
+      assigned for that change yet.
+
+blockers: []
+unknowns:
+  - Token cost per investigation is not metered.
