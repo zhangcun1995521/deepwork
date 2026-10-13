@@ -1,8 +1,69 @@
 # DeepWork
 
-> An enterprise ontology and governance layer for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH).
->
-> **Declare an enterprise world once, and derive the agent's tools and permissions from it.**
+> An enterprise agent has to know what a project is, who owns it, which customer it belongs
+> to, and **what it is allowed to touch**. DeepWork is where an enterprise writes that down —
+> and where an agent's tools and permissions are derived from it, and enforced.
+
+DeepWork is a platform built on [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+(DSH). DSH ships a complete agent harness; DeepWork adds the one thing it does not ship — the
+enterprise's own world, and the rules for acting in it. A plugin, not a fork, and a new domain
+costs YAML rather than code.
+
+## The whole project, as one line
+
+Every part of this repository is one step of the same journey: a **world is declared**, an
+**agent is equipped** from it, and what that agent does is **governed** on the way out.
+
+```
+   the enterprise's world                       what the agent gets
+   ──────────────────────                       ────────────────────
+①  declared    objects, relations, states,  →   a domain is data: `schema.yaml` and the
+               who may write what                instances beside it
+
+②  derived     read tools, the write tool,  →   a capability is declared, not coded —
+               declared actions and queries      nothing in TypeScript to add or remove
+
+③  authorised  `written_by` per type,       →   the host's own file and shell tools are
+               roles per deployment              covered too; no roles means read-only
+
+④  gated       states, the moves between    →   a move needing a second pair of eyes is
+               them, and what each needs         refused without a verdict from somebody
+                                                 other than the person making the move
+
+⑤  recorded    the audit trail and write    →   every attempt, refusals included; field
+               provenance                        names and never field values
+
+⑥  checked     `npm run validate`           →   a declaration that did not take effect is
+                                                 a failure, not a silence
+```
+
+Read it top to bottom and this repository is one thing. Read the sections below out of order
+and it is a list of mechanisms.
+
+## Who this is for
+
+Anyone putting an agent into a real business system. A forward-deployed engineer standing up
+the first use case; a platform team that has to answer "what is this agent allowed to touch,
+and who approved it"; the team that inherits it six months later.
+
+## If you only look at one thing
+
+`packages/ontology/examples/engagement` is the whole line at small scale: four stages, three of
+them gated on a signature scoped to that stage, one declared action, one relation.
+
+```sh
+npm run validate                  # is it sound? exit 0 or a list of what did not take effect
+node packages/ontology/scripts/show-derivation.ts packages/ontology/examples/engagement
+```
+
+The second command prints what came out of the declaration — and note what it prints with no
+roles configured: three read tools, no write tool, and no actions derived, because an
+unconfigured deployment is a read-only one.
+
+Then `packages/ontology/src/examples.test.ts` runs it for real — a stage cannot be entered
+without its signature, a signature for one stage does not open the next, and the role that
+makes a move cannot sign for it. Those three sentences are the project, and they are a test
+rather than a paragraph.
 
 ## The gap this fills
 
@@ -108,7 +169,7 @@ objects
 
 That second run is a governance model in fifteen lines, and not one of them was written by
 hand: it is the domain, read back. The enforcement behind those lines is described under
-[Governance](#governance) and checked by 160 tests.
+[Governance](#governance) and checked by 161 tests.
 
 ## What it looks like when an agent uses it
 
@@ -140,11 +201,36 @@ Working and demonstrated, not finished.
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-160 tests in total.
+161 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
 a second.
+
+## What is deliberately not here
+
+Scope is a design decision, so what this project refuses is worth naming as plainly as what it
+does. Each of these was considered and declined, not overlooked.
+
+- **Not a second UI.** The panel is a page inside DSH's own interface. An earlier standalone
+  workspace was retired the moment that turned out to be unnecessary — it had become a second
+  place to stand, reimplementing one that was already there.
+- **Not a memory layer, a retriever, or an agent framework.** The host already has session
+  history, workspace instructions, skills and subagents. The mechanism it lacks is knowing what
+  the enterprise's objects *are*; a second one of anything above would be a second source of
+  truth.
+- **Not a fork**, and not a wrapper around one: a plugin, tracking upstream releases.
+- **Not credential storage.** A domain may point at a secret; the value stays in the host's
+  credential seam and never enters the domain, the audit trail, or anything a model reads.
+
+And the honest half — what a reader will find missing:
+
+| Missing | Where it stands |
+|---|---|
+| One artefact showing a task start to finish — a recording, not a description | sessions are recorded as documents and refusals as audit entries, but there is no single thing a stranger can watch |
+| `deepwork init` — a domain to copy and rename | the three examples are the starter material |
+| Validation on several real domains | one production domain has been through it — 17 object types, 269 instances, 214 relations — and that run is what put the two-level diagnostics in. One is not several |
+| External system access | declared as a pointer, nothing more |
 
 ## Quick start
 
@@ -245,10 +331,13 @@ domain was put through. `packages/ontology/tests/fixtures/ahead-of-its-data` now
 | `tools/fde` | the FDE toolkit: qualify a use case before anything gets built (Python, runs standalone) |
 | `PROJECT_STATE.md` | the working record: decisions, verified facts, environment pitfalls |
 
-## Governance
+## Governance — steps ③ to ⑥, in detail
 
-Six mechanisms, all of them declared in the domain and enforced in code. None of them is a
-convention a tool author has to remember.
+Each mechanism below is one step of the line at the top, declared in the domain and enforced
+in code. Read in that order they are a conveyor: what a write must satisfy, what it leaves
+behind, and what a reader can check afterwards. None of them is a convention a tool author has
+to remember, which is the whole difference between governance and a note asking people to be
+careful.
 
 **The write guard covers every tool call, not only ours.** A check inside our own tools
 leaves the host's filesystem tool and its shell unguarded, and those are the ones a model
