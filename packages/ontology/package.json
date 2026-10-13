@@ -72,5 +72,25 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "typescript": "^5.9.0"
-  }
+  },
+  "author": "zhangcun1995521",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhangcun1995521/deepwork.git",
+    "directory": "packages/ontology"
+  },
+  "homepage": "https://github.com/zhangcun1995521/deepwork",
+  "bugs": {
+    "url": "https://github.com/zhangcun1995521/deepwork/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "ontology",
+    "agent",
+    "governance",
+    "permissions",
+    "audit"
+  ]
 }

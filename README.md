@@ -50,6 +50,60 @@ check anyone has to remember to add. With no roles configured the write tool is 
 registered at all, so an unconfigured deployment is a read-only one rather than a
 permissive one.
 
+## Ten seconds, no runtime
+
+The engine depends on nothing from the host, so a domain can be watched deriving its tools
+without installing one — no runtime, no API key, no agent:
+
+```sh
+node packages/ontology/scripts/show-derivation.ts packages/ontology/examples/project-delivery
+```
+
+```
+domain   packages/ontology/examples/project-delivery
+         5 object types, 16 instances, 6 relations (22 edges)
+
+tools    4 read, 0 write
+         ontology_get
+         ontology_find
+         ontology_links
+         ontology_query
+         no write tool — with no roles configured, the deployment is read-only
+
+objects
+         Customer     key=customer_id    instances=2   may write: delivery-lead
+         Project      key=project_id     instances=3   may write: delivery-lead, system
+         Person       key=employee_id    instances=3   may write: delivery-lead
+         Issue        key=issue_id       instances=5   may write: delivery-lead, engineer
+         Document     key=document_id    instances=3   may write: delivery-lead
+```
+
+Say who may write and the write tool appears. Declare a lifecycle and the states arrive with
+the rules that govern them — who may move something, and which moves need somebody else's
+verdict:
+
+```sh
+node packages/ontology/scripts/show-derivation.ts packages/ontology/tests/fixtures/review-delivery   --roles '[{"prefix":"session-","role":"engineer"}]'
+```
+
+```
+tools    3 read, 1 write
+         ontology_get
+         ontology_find
+         ontology_links
+         ontology_write   (registered because roles are configured)
+
+objects
+         Deliverable  key=deliverable_id instances=1   may write: engineer
+                      states: draft → signed_off
+                      sign_off: draft → signed_off   by: engineer   requires an independent verdict
+         Signoff      key=signoff_id     instances=1   may write: reviewer
+```
+
+That second run is a governance model in fifteen lines, and not one of them was written by
+hand: it is the domain, read back. The enforcement behind those lines is described under
+[Governance](#governance) and checked by 124 tests.
+
 ## Status
 
 Working and demonstrated, not finished.
@@ -122,6 +176,37 @@ path arriving from a browser is an arbitrary-read request.
 | `packages/probe` | the smallest possible plugin, kept as the smoke test for the plugin route |
 | `tools/fde` | the FDE toolkit: qualify a use case before anything gets built (Python, runs standalone) |
 | `PROJECT_STATE.md` | the working record: decisions, verified facts, environment pitfalls |
+
+## Governance
+
+Four mechanisms, all of them declared in the domain and enforced in code. None of them is a
+convention a tool author has to remember.
+
+**The write guard covers every tool call, not only ours.** A check inside our own tools
+leaves the host's filesystem tool and its shell unguarded, and those are the ones a model
+reaches for. The guard is mounted globally, derives the directories a role may write from
+`written_by`, and reads shell commands for redirection (`>`, `>>`, `tee`) as well as
+inspecting write tools. With no roles configured, every write is refused — an unconfigured
+deployment is a read-only one rather than a permissive one. Its own limits are written down
+in the code (`UNCOVERED_BY_GUARD`) rather than left to be discovered.
+
+**Every attempt is audited, refusals included.** A log that only records what succeeded
+cannot answer the question asked after an incident, which is what was *tried*. Entries carry
+field *names* and never field values: an audit trail that copies domain content into a second
+file doubles the surface that content can leak from.
+
+**A lifecycle is a declaration, not a code path.** States, the initial state, the moves
+between them and the roles allowed to make each move are read from the schema and enforced on
+the same write path as any other write — so the ACL and the audit already cover promotions,
+with no second path to forget about. Reads honour a declared default state, and report how
+many entities they left out rather than narrowing quietly.
+
+**Independent review is checked against provenance, not against a claim.** A move can require
+a passing verdict, and the verdict must have been produced by someone other than the caller.
+That question is answered from a sidecar the platform writes itself, never from a field the
+caller filled in — a verdict that names its own producer is a form, not a control. A verdict
+whose producer cannot be established is refused, because "we cannot tell who reviewed this"
+is not "somebody did".
 
 ## Design notes
 

@@ -58,6 +58,26 @@ export interface DomainSnapshot {
     directory: string
     writtenBy: string[]
     fieldCount: number
+    /**
+     * Declared states and the moves between them, when the type has a lifecycle.
+     *
+     * Surfaced because it is the part of a domain a reader can check at a glance: which
+     * states exist, who may move something between them, and which moves need a second
+     * pair of eyes.
+     */
+    lifecycle?: {
+      field: string
+      initial: string
+      defaultState?: string
+      states: string[]
+      transitions: Array<{
+        name: string
+        from: string[]
+        to: string
+        by: string[]
+        requiresReview: boolean
+      }>
+    }
     instances: number
   }>
   linkTypes: Array<{
@@ -133,6 +153,25 @@ export function domainSnapshot(
       writtenBy: type.writtenBy,
       fieldCount: Object.keys(type.fields).length,
       instances: (graph.byType.get(type.name) ?? []).length,
+      ...(type.lifecycle === undefined
+        ? {}
+        : {
+            lifecycle: {
+              field: type.lifecycle.field,
+              initial: type.lifecycle.initial,
+              ...(type.lifecycle.defaultState === undefined
+                ? {}
+                : { defaultState: type.lifecycle.defaultState }),
+              states: type.lifecycle.states,
+              transitions: type.lifecycle.transitions.map((transition) => ({
+                name: transition.name,
+                from: transition.from,
+                to: transition.to,
+                by: transition.by,
+                requiresReview: transition.review !== undefined,
+              })),
+            },
+          }),
     })),
     linkTypes: [...graph.schema.linkTypes.values()].map((link) => ({
       name: link.name,

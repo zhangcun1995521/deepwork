@@ -97,3 +97,21 @@ test('a malformed domain reaches the panel with its warnings attached', () => {
   // And the panel still has something to render: a broken declaration degrades itself.
   assert.ok(snapshot.objectTypes.length > 0)
 })
+
+test('the snapshot carries a declared lifecycle, so a reader can see the rules', () => {
+  // Added when the panel's data gained states and transitions. The demo script prints them
+  // and the panel will render them, so the shape is asserted here rather than left to two
+  // consumers to discover separately.
+  const snapshot = domainSnapshot(
+    loadGraph(fixture('review-delivery')),
+    [{ prefix: 'session-', role: 'engineer' }],
+  )
+  const deliverable = snapshot.objectTypes.find((type) => type.name === 'Deliverable')
+  assert.equal(deliverable?.lifecycle?.field, 'state')
+  assert.deepEqual(deliverable?.lifecycle?.states, ['draft', 'signed_off'])
+  assert.equal(deliverable?.lifecycle?.transitions[0]?.requiresReview, true)
+  assert.equal(deliverable?.lifecycle?.transitions[0]?.by.join(','), 'engineer')
+
+  const signoff = snapshot.objectTypes.find((type) => type.name === 'Signoff')
+  assert.equal(signoff?.lifecycle, undefined, 'a type without a lifecycle declares none')
+})
