@@ -16,3 +16,8 @@ packages/*/lib/
 # of this repository, but a fixture used as one would otherwise drop this next to the
 # source.
 .audit.jsonl
+
+# Python (tools/fde)
+__pycache__/
+*.py[cod]
+.venv/
