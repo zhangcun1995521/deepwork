@@ -61,11 +61,12 @@ Working and demonstrated, not finished.
 | Derived tool surface — reads | ✅ verified with real agent turns |
 | Derived governance — writes, permissions, audit | ✅ verified with a real refusal and a real write |
 | Write guard — every tool call, not only ours | ✅ mounted globally; a real refusal and a real shell-redirect refusal observed, both audited |
+| Declared lifecycle — states, transitions, who may move them | ✅ enforced on the write path; a real refusal and a real promotion observed, both audited |
 | Example domain — the demo scenario | ✅ end to end |
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-89 tests in total.
+102 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under

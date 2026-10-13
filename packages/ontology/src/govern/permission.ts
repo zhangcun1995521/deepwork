@@ -41,6 +41,11 @@ export type DenialReason =
   | 'role-not-permitted'
   | 'missing-required-field'
   | 'path-outside-declared-directory'
+  // Lifecycle refusals live in their own module; they surface through the same write
+  // tool, so they are part of the same vocabulary a caller branches on.
+  | 'unknown-state'
+  | 'no-declared-transition'
+  | 'transition-not-permitted'
 
 /** The outcome of a permission check. */
 export type Permission =

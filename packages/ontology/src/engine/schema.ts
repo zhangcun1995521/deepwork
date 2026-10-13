@@ -27,6 +27,8 @@ import { join, posix } from 'node:path'
 
 import { load as loadYaml } from 'js-yaml'
 
+import { parseLifecycle, type LifecycleDecl } from './lifecycle.ts'
+
 /** How an object type's primary key was determined; kept for diagnostics. */
 export type PrimaryKeySource = 'declared' | 'required_fields' | 'fallback'
 
@@ -63,6 +65,11 @@ export interface ObjectTypeDecl {
   directory: string
   /** Roles permitted to write this type. Consumed by the guard layer. */
   writtenBy: string[]
+  /**
+   * Declared states and the moves between them, when the type has a lifecycle.
+   * Undefined means writes behave as plain field edits, with no state to enforce.
+   */
+  lifecycle?: LifecycleDecl
   /** The declaration as parsed, for anything this shape does not model yet. */
   raw: Record<string, unknown>
 }
@@ -210,6 +217,8 @@ export function parseSchema(root: string): OntologySchema {
     }
 
     const requiredFields = asStringList(decl.required_fields) ?? []
+    // Parsed once, so a malformed declaration warns once rather than once per use.
+    const lifecycle = parseLifecycle(decl.lifecycle, name, warnings)
     const { primaryKey, source } = resolvePrimaryKey(name, decl, requiredFields, warnings)
 
     objectTypes.set(name, {
@@ -225,6 +234,9 @@ export function parseSchema(root: string): OntologySchema {
       // authored with forward slashes.
       directory: fileLocation.length > 0 ? posix.dirname(fileLocation) : '',
       writtenBy: asStringList(decl.written_by) ?? [],
+      // Undefined here is a real answer: the type has no lifecycle, so no state is
+      // enforced and nothing pretends otherwise.
+      ...(lifecycle === undefined ? {} : { lifecycle }),
       raw: decl,
     })
   }

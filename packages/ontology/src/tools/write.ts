@@ -27,6 +27,7 @@ import { dump as dumpYaml } from 'js-yaml'
 
 import { refreshGraph, type OntologyGraph } from '../engine/graph.ts'
 import type { AuditEntry } from '../govern/audit.ts'
+import { authoriseTransition } from '../govern/lifecycle.ts'
 import {
   authoriseWrite,
   isSafeId,
@@ -185,10 +186,29 @@ export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): D
           }
 
       if (!decision.allowed) deny(decision.reason, decision.detail)
+      const callerRole = decision.allowed ? decision.role : undefined
 
       // The identity field is taken from `id`, never from `data`, so a caller cannot
       // write an entity whose file name and identity disagree.
       const existing = graph.byId.get(`${type.name}:${id}`)
+
+      // A change of state is not an ordinary field edit: the schema says who may make
+      // that claim and from where. Checked on this same write path rather than in an
+      // action of its own, so the promotion is covered by the ACL above and by the audit
+      // below — the reference implementation wrote the file directly from its own
+      // promotion code and quietly bypassed both.
+      const lifecycle = type.lifecycle
+      if (lifecycle !== undefined && Object.hasOwn(data, lifecycle.field)) {
+        const onDisk = existing?.data[lifecycle.field]
+        const transition = authoriseTransition(
+          lifecycle,
+          typeof onDisk === 'string' ? onDisk : undefined,
+          data[lifecycle.field],
+          callerRole,
+        )
+        if (!transition.allowed) deny(transition.reason, transition.detail)
+      }
+
       const merged: Record<string, unknown> = {
         ...(existing === undefined ? {} : existing.data),
         ...data,
