@@ -108,7 +108,7 @@ objects
 
 That second run is a governance model in fifteen lines, and not one of them was written by
 hand: it is the domain, read back. The enforcement behind those lines is described under
-[Governance](#governance) and checked by 157 tests.
+[Governance](#governance) and checked by 160 tests.
 
 ## What it looks like when an agent uses it
 
@@ -140,7 +140,7 @@ Working and demonstrated, not finished.
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-157 tests in total.
+160 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
@@ -210,6 +210,28 @@ nothing to compare.
 
 A schema file that cannot be read at all is the one failure that stops before there is a
 domain to check, so it is reported as a failing domain rather than as a diagnostic.
+
+### Problems and notes
+
+A report has two levels, and the line between them is *who has to act*.
+
+**Problems** need somebody to act, and they fail the run: a declaration that cannot take effect
+(an action pointing at a type that does not exist, a field the type does not have, a transition
+naming a state that was never declared), or an instance file that could not be read. **Notes**
+are facts about the data that need nobody to act, and never fail: a declared directory with
+nothing in it yet, a relation no instance has wired, an instance whose identity fell back to its
+filename. Notes are still counted and printed — "nothing to fix" must not read as "nothing to
+see", since an empty query result is exactly what those notes explain.
+
+The line was drawn by real data, not by taste. A production domain — 17 object types, 269
+instances, 214 relations — loaded and answered correctly and produced nine unwired relations and
+three empty directories. Judged as failures, that report had nothing green in it, and a check
+that is always red is a check nobody reads. Split, the same run says what it should: four things
+the data has not grown into yet, and no defects at all.
+
+Because the first version of that command did not split them, and because the fixture domains it
+was built against were small, new, and written by the same hand, nothing caught it until a real
+domain was put through. `packages/ontology/tests/fixtures/ahead-of-its-data` now pins the policy.
 
 ## What is in here
 

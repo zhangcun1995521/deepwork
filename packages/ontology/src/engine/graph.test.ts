@@ -108,16 +108,18 @@ test('the same engine reads an unrelated domain unchanged', () => {
 
 test('a malformed domain still loads, and says exactly what degraded', () => {
   const graph = loadGraph(fixture('broken'))
-  const warnings = graph.warnings.join('\n')
+  // Everything reported, whether it needs somebody to act or not: the point of this test is
+  // that nothing degrades silently.
+  const reported = [...graph.warnings, ...graph.notes].join('\n')
 
-  assert.ok(warnings.includes('directory "objects/sprockets" does not exist'), warnings)
-  assert.ok(warnings.includes('widgets/bad-syntax.yaml'), warnings)
-  assert.ok(warnings.includes('widgets/not-a-mapping.yaml'), warnings)
-  assert.ok(warnings.includes('using its filename "no-key" as the identity'), warnings)
-  assert.ok(warnings.includes('using its filename "D-1" as the identity'), warnings)
-  assert.ok(warnings.includes('duplicate id Widget:W-1'), warnings)
-  assert.ok(warnings.includes('has no matching object'), warnings)
-  assert.ok(warnings.includes('unwired (expects "unwired" on Widget)'), warnings)
+  assert.ok(reported.includes('directory "objects/sprockets" does not exist'), reported)
+  assert.ok(reported.includes('widgets/bad-syntax.yaml'), reported)
+  assert.ok(reported.includes('widgets/not-a-mapping.yaml'), reported)
+  assert.ok(reported.includes('using its filename "no-key" as the identity'), reported)
+  assert.ok(reported.includes('using its filename "D-1" as the identity'), reported)
+  assert.ok(reported.includes('duplicate id Widget:W-1'), reported)
+  assert.ok(reported.includes('has no matching object'), reported)
+  assert.ok(reported.includes('unwired (expects "unwired" on Widget)'), reported)
 
   // Loading never aborted: the surviving instances are queryable.
   assert.equal(graph.byId.has('Widget:W-1'), true)
@@ -132,13 +134,34 @@ test('a relation no instance can satisfy yields no edge, and is called out', () 
   assert.deepEqual(linksOf(graph, 'unwired'), [])
 
   // That state used to be silent — the schema said the relation existed and every
-  // query simply came back empty. It is now one grouped warning.
+  // query simply came back empty. It is now one grouped note: a relation no instance has
+  // wired yet is not a defect, but it is also not nothing.
   assert.ok(
-    graph.warnings.some((warning) =>
-      warning.startsWith('declared relations with no matching instance field:'),
+    graph.notes.some((note) =>
+      note.startsWith('declared relations with no matching instance field:'),
     ),
-    graph.warnings.join('\n'),
+    graph.notes.join('\n'),
   )
+})
+
+test('what needs somebody to act is separated from what the data has not grown into', () => {
+  const graph = loadGraph(fixture('broken'))
+  const errors = graph.warnings.join('\n')
+  const notes = graph.notes.join('\n')
+
+  // An unreadable instance file and a dropped duplicate are the author's to fix.
+  assert.ok(errors.includes('widgets/bad-syntax.yaml'), errors)
+  assert.ok(errors.includes('widgets/not-a-mapping.yaml'), errors)
+  assert.ok(errors.includes('duplicate id Widget:W-1'), errors)
+  assert.ok(errors.includes('has no matching object'), errors)
+
+  // An empty declared directory, an identity that fell back to the filename, and a relation
+  // nothing has wired are facts about the data, and judging them as defects red-lights a domain
+  // that loads and answers correctly.
+  assert.ok(notes.includes('directory "objects/sprockets" does not exist'), notes)
+  assert.ok(notes.includes('using its filename "no-key" as the identity'), notes)
+  assert.ok(notes.includes('unwired (expects "unwired" on Widget)'), notes)
+  assert.equal(errors.includes('objects/sprockets'), false, errors)
 })
 
 test('a duplicate id resolves deterministically to the first file in sorted order', () => {

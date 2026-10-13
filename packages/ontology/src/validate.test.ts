@@ -75,3 +75,28 @@ test('a schema that cannot be read at all throws while loading', () => {
   // command prints it as a failing domain, which is what keeps it out of the exit-code gap.
   assert.throws(() => loadGraph(fixture('not-a-mapping')), /must be a YAML mapping/)
 })
+
+test('a domain written ahead of its data is clean, with the count visible', () => {
+  const report = validateDomain(loadGraph(fixture('ahead-of-its-data')), DELIVERY_LEAD)
+
+  // Nothing to fix: an empty declared directory and a relation no instance has wired are facts
+  // about the data, not defects in the declaration.
+  assert.deepEqual(report.diagnostics, [])
+  assert.equal(report.notes.length, 2)
+  // And not hidden either: "nothing to fix" must not read as "nothing to see", because those two
+  // notes are exactly what a reader wants to know before trusting an empty query result.
+  assert.ok(report.notes.some((note) => note.includes('objects/contracts')), report.notes.join('\n'))
+  assert.ok(report.notes.some((note) => note.includes('signs')), report.notes.join('\n'))
+})
+
+test('a defect is still a defect when the same domain also has notes', () => {
+  const report = validateDomain(loadGraph(fixture('broken')), DELIVERY_LEAD)
+
+  assert.ok(report.diagnostics.length > 0)
+  assert.ok(report.notes.length > 0)
+  // The two channels do not leak into each other: an unreadable instance file is not a note,
+  // and an empty directory is not a problem.
+  const problems = report.diagnostics.map((diagnostic) => diagnostic.message).join('\n')
+  assert.ok(problems.includes('bad-syntax.yaml'), problems)
+  assert.equal(problems.includes('does not exist; no instances loaded'), false, problems)
+})

@@ -33,7 +33,17 @@ export interface DomainReport {
   root: string
   roles: readonly RoleRule[]
   summary: DomainSnapshot['summary']
+  /** Problems that need somebody to act. A domain fails on these. */
   diagnostics: Diagnostic[]
+  /**
+   * Facts about the data that need nobody to act — see `OntologyGraph.notes`.
+   *
+   * Reported rather than dropped, and not counted as failure. A domain written ahead of its
+   * data is the normal state of a domain, and a check that red-lights it is one people stop
+   * reading; the count is what keeps "nothing to fix" from hiding "nine relations produce no
+   * edges".
+   */
+  notes: string[]
   /**
    * Whether the write and action halves were derived at all.
    *
@@ -81,6 +91,7 @@ export function validateDomain(
     roles,
     summary: snapshot.summary,
     diagnostics,
+    notes: snapshot.notes,
     writesChecked,
   }
 }

@@ -52,6 +52,12 @@ export interface DomainSnapshot {
     load: string[]
     derivation: string[]
   }
+  /**
+   * Facts about the data that need nobody to act. Separate from {@link warnings} because a
+   * check that fails on a domain still being written ahead of its data is a check people learn
+   * to ignore — see `OntologyGraph.notes`.
+   */
+  notes: string[]
   /** Declared actions, as the domain declared them. */
   actions: Array<{
     name: string
@@ -161,6 +167,7 @@ export function domainSnapshot(
       load: graph.warnings,
       derivation: [...reads.warnings, ...writes.warnings],
     },
+    notes: graph.notes,
     objectTypes: [...graph.schema.objectTypes.values()].map((type) => ({
       name: type.name,
       primaryKey: type.primaryKey,

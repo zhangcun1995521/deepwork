@@ -87,5 +87,14 @@ export function derivationLines(root: string, roles: RoleRule[] = []): string[] 
     for (const warning of warnings) lines.push(`         ${warning}`)
   }
 
+  // Kept apart from the warnings and always shown. A domain being written ahead of its data is
+  // the normal state of a domain, but "nothing to fix" must not become "nothing to see" — nine
+  // relations producing no edges is exactly what a reader wants to know.
+  if (snapshot.notes.length > 0) {
+    lines.push('')
+    lines.push(`notes    ${snapshot.notes.length === 1 ? 'one thing' : `${snapshot.notes.length} things`} the data has not grown into; nothing to fix`)
+    for (const note of snapshot.notes) lines.push(`         ${note}`)
+  }
+
   return lines
 }

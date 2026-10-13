@@ -14,6 +14,15 @@
  * less. That is stated in the output rather than left implicit: a pass is a claim, and this
  * prints the claim it is actually entitled to make.
  *
+ * A report has two levels, because the two answer different questions. **Problems** need
+ * somebody to act — a declaration that cannot take effect, an instance file that cannot be read
+ * — and they fail the run. **Notes** are facts about the data that need nobody to act: a declared
+ * directory with nothing in it yet, a relation no instance has wired. Notes are counted and
+ * printed and never fail, because a domain written ahead of its data is the normal state of a
+ * domain, and a check that red-lights it is one people stop reading — which is how the real
+ * problem is missed once it arrives. Real data settled that line: a domain that loaded and
+ * answered correctly produced nine unwired relations and three empty directories.
+ *
  * `--role` is `prefix=role` rather than the role map as JSON because this command is meant to
  * run from package scripts, and a JSON argument does not survive one: npm hands the script to
  * `cmd.exe` on Windows, which strips the double quotes JSON requires. Splitting on `=` needs
@@ -61,7 +70,7 @@ function indented(message: string, pad: string): string[] {
   return message.split('\n').map((line) => `${pad}${line}`)
 }
 
-function describe(root: string): { lines: string[]; problems: number } {
+function describe(root: string): { lines: string[]; problems: number; notes: number } {
   const lines: string[] = [`domain   ${root}`]
   let report: DomainReport
 
@@ -70,7 +79,7 @@ function describe(root: string): { lines: string[]; problems: number } {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     lines.push(...indented(`cannot load: ${message}`, '         '))
-    return { lines, problems: 1 }
+    return { lines, problems: 1, notes: 0 }
   }
 
   const { summary } = report
@@ -99,21 +108,33 @@ function describe(root: string): { lines: string[]; problems: number } {
     }
   }
 
-  return { lines, problems: report.diagnostics.length }
+  // Reported, and not a failure. A domain written ahead of its data is the normal state of a
+  // domain; what matters is that the count is visible, since "nothing to fix" must not hide
+  // "nine relations produce no edges".
+  if (report.notes.length > 0) {
+    lines.push(`         ${report.notes.length} notes (nothing to fix)`)
+    for (const note of report.notes) lines.push(...indented(note, '           '))
+  }
+
+  return { lines, problems: report.diagnostics.length, notes: report.notes.length }
 }
 
 const blocks: string[] = []
 let failed = 0
+let noted = 0
 for (const root of roots) {
-  const { lines, problems } = describe(root)
+  const { lines, problems, notes } = describe(root)
   if (problems > 0) failed += 1
+  if (notes > 0) noted += 1
   blocks.push(lines.join('\n'))
 }
 
 process.stdout.write(`${blocks.join('\n\n')}\n\n`)
 process.stdout.write(
   `${roots.length} domain${roots.length === 1 ? '' : 's'} checked: ` +
-    `${roots.length - failed} clean, ${failed} with problems\n`,
+    `${roots.length - failed} clean, ${failed} with problems` +
+    (noted === 0 ? '' : `, ${noted} carrying notes`) +
+    '\n',
 )
 
 process.exit(failed > 0 ? 1 : 0)

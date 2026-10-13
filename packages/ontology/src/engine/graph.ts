@@ -69,8 +69,22 @@ export interface OntologyGraph {
   byType: Map<string, OntologyObject[]>
   /** Instances indexed by `${type}:${id}`. */
   byId: Map<string, OntologyObject>
-  /** Non-fatal problems found while loading. Never empty by accident. */
+  /**
+   * Problems that need somebody to act: a declaration that cannot take effect, or an instance
+   * file that could not be read. Never empty by accident.
+   */
   warnings: string[]
+  /**
+   * Facts about the data that need nobody to act — a declared directory with nothing in it yet,
+   * a relation no instance has wired, an instance whose identity fell back to its filename.
+   *
+   * Kept apart from {@link warnings} because the two answer different questions. A domain that
+   * is being written ahead of its data is not a broken domain, and a check that fails on it is
+   * a check people learn to ignore. Real data settled this: a domain that loads and answers
+   * correctly produced nine unwired relations and three empty directories, and judging those
+   * the same as an unreadable file made the whole report useless.
+   */
+  notes: string[]
 }
 
 /**
@@ -152,6 +166,7 @@ function deriveLinks(objects: OntologyObject[], schema: OntologySchema): Ontolog
 export function loadGraph(root: string): OntologyGraph {
   const schema = parseSchema(root)
   const warnings = [...schema.warnings]
+  const notes: string[] = []
 
   const objects: OntologyObject[] = []
   const byType = new Map<string, OntologyObject[]>()
@@ -166,7 +181,7 @@ export function loadGraph(root: string): OntologyGraph {
     try {
       entries = readdirSync(directory)
     } catch {
-      warnings.push(
+      notes.push(
         `object type "${type.name}": directory "${type.directory}" does not exist; no instances loaded`,
       )
       continue
@@ -193,7 +208,7 @@ export function loadGraph(root: string): OntologyGraph {
       let id: string
       if (declaredId === undefined || declaredId === null || String(declaredId).length === 0) {
         id = file.replace(/\.ya?ml$/, '')
-        warnings.push(
+        notes.push(
           `object "${relative}" has no "${type.primaryKey}"; using its filename "${id}" as the identity`,
         )
       } else {
@@ -252,14 +267,14 @@ export function loadGraph(root: string): OntologyGraph {
     return !sources.some((object) => Object.hasOwn(object.data, link.field))
   })
   if (unwired.length > 0) {
-    warnings.push(
+    notes.push(
       'declared relations with no matching instance field: ' +
         unwired.map((link) => `${link.name} (expects "${link.field}" on ${link.from})`).join(', ') +
         ' — wire the field on an instance, or drop the relation',
     )
   }
 
-  return { root, schema, objects, links, byType, byId, warnings }
+  return { root, schema, objects, links, byType, byId, warnings, notes }
 }
 
 /**
@@ -334,4 +349,5 @@ export function refreshGraph(graph: OntologyGraph): void {
   graph.byType = reloaded.byType
   graph.byId = reloaded.byId
   graph.warnings = reloaded.warnings
+  graph.notes = reloaded.notes
 }

@@ -1,0 +1,38 @@
+version: "1.0"
+
+# A domain written ahead of its data, and nothing else wrong with it.
+#
+# This fixture pins a policy rather than a mechanism: a declaration the world has not caught up
+# with is a note, not a failure. A check that red-lights a domain in this state is a check people
+# stop reading — which is how the real problem gets missed once it does arrive. Both facts below
+# are real: a domain that loaded and answered correctly produced nine unwired relations and three
+# empty directories, and judging those as defects made its report useless.
+
+object_types:
+  Customer:
+    primary_key: customer_id
+    required_fields: [customer_id, name]
+    file_location: objects/customers/CUST-*.yaml
+    written_by: [analyst]
+    fields:
+      customer_id: { type: string, required: true }
+      name: { type: string, required: true }
+
+  Contract:
+    primary_key: contract_id
+    required_fields: [contract_id, customer]
+    # Declared, and nothing has been filed under it yet.
+    file_location: objects/contracts/CON-*.yaml
+    written_by: [analyst]
+    fields:
+      contract_id: { type: string, required: true }
+      customer: { type: string, required: true }
+
+link_types:
+  # Declared, and no instance carries the field that would produce an edge.
+  signs:
+    from: Customer
+    to: Contract
+    via: customer
+
+functions: {}
