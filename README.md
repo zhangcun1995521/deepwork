@@ -108,7 +108,7 @@ objects
 
 That second run is a governance model in fifteen lines, and not one of them was written by
 hand: it is the domain, read back. The enforcement behind those lines is described under
-[Governance](#governance) and checked by 124 tests.
+[Governance](#governance) and checked by 139 tests.
 
 ## What it looks like when an agent uses it
 
@@ -134,11 +134,12 @@ Working and demonstrated, not finished.
 | Declared counters — who may record usage | ✅ granted apart from `written_by`; verified live by a role that may count and may not author |
 | Declared actions — a named way to write, not only the generic tool | ✅ one tool per declaration; verified live, preconditions and role narrowing included |
 | Declared review — a move that needs an independent verdict | ✅ enforced against provenance the platform recorded; a promotion went through on another session's verdict and was refused without one |
+| Declared-domain validation — an exit code a pipeline can read | ✅ a sound domain passes, a malformed one fails naming the declaration that was dropped |
 | Example domain — the demo scenario | ✅ end to end |
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-134 tests in total.
+139 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
@@ -181,6 +182,26 @@ loud, from the running system, instead of from a document.
 
 Only domains named in `DEEPWORK_DOMAINS` (or the bundled example) are readable, because a
 path arriving from a browser is an arbitrary-read request.
+
+## Checking a domain
+
+The panel answers "what did this domain derive". `npm run validate` answers "did any of it
+fail to happen", which is the question that matters before a domain is deployed:
+
+```sh
+npm run validate
+npm run validate -- packages/ontology/tests/fixtures/broken
+```
+
+Exit 0 means every declaration took effect. Exit 1 lists what did not, each with the name of
+the thing that was dropped — an action pointing at an undeclared type, a field the type does
+not have, a function whose mode is unavailable. Pass `--role prefix=role` to make the write and
+action halves reachable; without it the command says so rather than reporting a shorter list
+as a clean one, because with no roles nothing derives there and "declared equals derived" has
+nothing to compare.
+
+A schema file that cannot be read at all is the one failure that stops before there is a
+domain to check, so it is reported as a failing domain rather than as a diagnostic.
 
 ## What is in here
 

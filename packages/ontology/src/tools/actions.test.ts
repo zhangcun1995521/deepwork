@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import { loadGraph } from '../engine/graph.ts'
 import type { AuditEntry } from '../govern/audit.ts'
 import type { RoleRule } from '../govern/permission.ts'
-import { deriveActionTools } from './actions.ts'
+import { deriveActionTools, undeliveredActions } from './actions.ts'
 import { deriveTools } from './derive.ts'
 import { deriveWriteTools, type WriteOptions } from './write.ts'
 
@@ -51,10 +51,15 @@ test('every declared action produces a tool, and the counts are compared', () =>
 
   assert.equal(warnings.length, 0)
   assert.equal(actions.length, graph.schema.actions.length)
-  // The declaration that used to be inert: an action named in the schema is callable.
+  // The declaration that used to be inert: an action named in the schema is callable. Compared
+  // through the shared helper rather than rebuilt here, so the check this test makes and the
+  // one `validateDomain` makes cannot drift apart.
   assert.deepEqual(
-    actions.map((tool) => tool.name),
-    graph.schema.actions.map((action) => action.name),
+    undeliveredActions(
+      graph,
+      actions.map((tool) => tool.name),
+    ),
+    [],
   )
 })
 

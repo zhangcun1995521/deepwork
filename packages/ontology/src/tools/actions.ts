@@ -145,3 +145,23 @@ export function deriveActionTools(graph: OntologyGraph, options: WriteOptions): 
 export function declaredActions(graph: OntologyGraph): ActionDecl[] {
   return graph.schema.actions
 }
+
+/**
+ * Declared actions that produced no tool.
+ *
+ * Comparing counts is how a regression that stops deriving one of them shows up at all, but a
+ * count cannot say *which* declaration went missing, and the reader's next move depends on
+ * that. Returns names for that reason: the caller is expected to name the offender rather than
+ * report two numbers that differ.
+ *
+ * Empty means the declaration is fully in effect, which is the only state worth calling clean.
+ */
+export function undeliveredActions(
+  graph: OntologyGraph,
+  derivedNames: readonly string[],
+): string[] {
+  const derived = new Set(derivedNames)
+  return graph.schema.actions
+    .filter((action) => !derived.has(action.name))
+    .map((action) => action.name)
+}

@@ -81,3 +81,20 @@ functions:
     description: Every widget.
     use: filter_by
     on: Widget
+
+action_types:
+  # Same policy as `functions`: one defect per declaration, pinning each rejection path.
+  # Unlike `functions` there is no survivor here, and that is not an oversight — every type in
+  # this domain declares no `written_by` (a separate warning, and one a test relies on), so an
+  # action that would otherwise be sound still has nobody permitted to invoke it. A whole
+  # declared action deriving into a working tool is covered by `project-delivery`.
+  action_targets_undeclared_type:
+    use: create
+    target: Nonexistent
+  action_names_a_field_the_type_lacks:
+    use: create
+    target: Widget
+    fields: [widget_id, mounts_typo]
+  action_use_is_neither_create_nor_update:
+    use: created
+    target: Widget
