@@ -319,6 +319,28 @@ export function writeEntity(
         )
       }
 
+      // Value legality is judged on what this call supplies, not on the merged entity: a
+      // violation already on disk is a load-time report, and refusing an unrelated correction
+      // because an old value is wrong would block the very fix the domain wants. Enumerations
+      // reach the model as a JSON Schema `enum`, which is advice; this is the enforcement.
+      const undeclared: Array<{ field: string; allowed: unknown[] }> = []
+      for (const [field, value] of Object.entries(data)) {
+        const allowed = type.fields[field]?.values
+        if (allowed === undefined || allowed.length === 0) continue
+        if (!allowed.includes(value)) undeclared.push({ field, allowed })
+      }
+      if (undeclared.length > 0) {
+        deny(
+          'value-not-declared',
+          `${undeclared
+            .map(
+              (entry) =>
+                `"${entry.field}" accepts one of ${entry.allowed.map((choice) => JSON.stringify(choice)).join(', ')}`,
+            )
+            .join('; ')} — the supplied value is not among them`,
+        )
+      }
+
       writeFileSync(file, dumpYaml(merged, { lineWidth: 120, noRefs: true }))
       // Recorded before the refresh, so a later read in the same process sees it.
       appendProvenance(join(graph.root, PROVENANCE_FILE), {

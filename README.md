@@ -108,7 +108,7 @@ objects
 
 That second run is a governance model in fifteen lines, and not one of them was written by
 hand: it is the domain, read back. The enforcement behind those lines is described under
-[Governance](#governance) and checked by 139 tests.
+[Governance](#governance) and checked by 142 tests.
 
 ## What it looks like when an agent uses it
 
@@ -134,12 +134,13 @@ Working and demonstrated, not finished.
 | Declared counters — who may record usage | ✅ granted apart from `written_by`; verified live by a role that may count and may not author |
 | Declared actions — a named way to write, not only the generic tool | ✅ one tool per declaration; verified live, preconditions and role narrowing included |
 | Declared review — a move that needs an independent verdict | ✅ enforced against provenance the platform recorded; a promotion went through on another session's verdict and was refused without one |
+| Declared value sets — a field's `values` as a closed set, not a hint | ✅ a value outside it is refused with `value-not-declared`, through the generic write tool and through a declared action |
 | Declared-domain validation — an exit code a pipeline can read | ✅ a sound domain passes, a malformed one fails naming the declaration that was dropped |
 | Example domain — the demo scenario | ✅ end to end |
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-139 tests in total.
+142 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
@@ -215,7 +216,7 @@ domain to check, so it is reported as a failing domain rather than as a diagnost
 
 ## Governance
 
-Four mechanisms, all of them declared in the domain and enforced in code. None of them is a
+Six mechanisms, all of them declared in the domain and enforced in code. None of them is a
 convention a tool author has to remember.
 
 **The write guard covers every tool call, not only ours.** A check inside our own tools
@@ -230,6 +231,16 @@ in the code (`UNCOVERED_BY_GUARD`) rather than left to be discovered.
 cannot answer the question asked after an incident, which is what was *tried*. Entries carry
 field *names* and never field values: an audit trail that copies domain content into a second
 file doubles the surface that content can leak from.
+
+**A declared set of choices is enforced, not advertised.** A field declaring `values` reaches
+the model as a JSON Schema `enum`, and that is advice: a model that supplied something else was
+written through, which left the declaration descriptive and the value set advisory. The write
+path now refuses a value outside the declared set, naming the field and the choices it accepts.
+Only the fields a call supplies are judged, so a violation already on disk does not hold every
+later correction hostage to it — reporting that belongs where it can be seen without blocking a
+fix. Verified live: `severity: "critical"` was refused with `value-not-declared` through the
+generic write tool and through a declared action, and the entry in the trail names the field
+without echoing the rejected value.
 
 **A lifecycle is a declaration, not a code path.** States, the initial state, the moves
 between them and the roles allowed to make each move are read from the schema and enforced on

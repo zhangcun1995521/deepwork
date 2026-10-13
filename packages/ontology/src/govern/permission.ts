@@ -41,6 +41,8 @@ export type DenialReason =
   | 'role-not-permitted'
   | 'missing-required-field'
   | 'path-outside-declared-directory'
+  // Value refusals: a field declared a closed set of choices and the write stepped outside it.
+  | 'value-not-declared'
   // Lifecycle refusals live in their own module; they surface through the same write
   // tool, so they are part of the same vocabulary a caller branches on.
   | 'unknown-state'

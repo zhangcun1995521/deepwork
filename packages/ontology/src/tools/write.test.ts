@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -181,6 +181,63 @@ test('a write missing a field the type requires is refused', () => {
   assert.equal(entries.at(-1)?.reason, 'missing-required-field')
   // The refusal names what was absent, so the caller can fix it.
   assert.ok(entries.at(-1)?.detail?.includes('customer'), entries.at(-1)?.detail)
+})
+
+test('a value outside the declared set is refused, though the schema advertised the set', () => {
+  const root = scratchDomain('project-delivery')
+  const graph = loadGraph(root)
+  const { entries, audit } = collector()
+  const { tools } = deriveWriteTools(graph, { audit, now: CLOCK, roles: ANALYST })
+
+  assert.throws(
+    () =>
+      writeTool(tools).execute(
+        { type: 'Project', id: 'P-004', data: { customer: 'CUST-ACME', owner: 'EMP-RIVERA', status: 'OffTheRails' } },
+        { agentId: 'analyst-session-1' },
+      ),
+    /write denied \(value-not-declared\)/,
+  )
+  assert.equal(entries.at(-1)?.reason, 'value-not-declared')
+  // The refusal names the choices so the caller can pick one, and does not echo the rejected
+  // value back out — the same reason the allowed case records field names and not their
+  // contents.
+  assert.ok(entries.at(-1)?.detail?.includes('"OnTrack", "AtRisk", "Delayed"'), entries.at(-1)?.detail)
+  assert.ok(!entries.at(-1)?.detail?.includes('OffTheRails'), entries.at(-1)?.detail)
+})
+
+test('a field with no declared set stays free-form', (t) => {
+  const root = scratchDomain('project-delivery')
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const graph = loadGraph(root)
+  const { tools } = deriveWriteTools(graph, { audit: () => {}, now: CLOCK, roles: ANALYST })
+
+  // `summary` declares no `values`, and the check has to leave it alone: a domain decides
+  // which fields are closed, not the engine.
+  writeTool(tools).execute(
+    { type: 'Issue', id: 'ISSUE-900', data: { project: 'P-001', summary: 'anything at all, unconstrained' } },
+    { agentId: 'analyst-session-1' },
+  )
+  assert.equal(graph.byId.get('Issue:ISSUE-900')?.data.summary, 'anything at all, unconstrained')
+})
+
+test('only what a call supplies is judged, so an old violation does not block a correction', (t) => {
+  const root = scratchDomain('project-delivery')
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+
+  // A status that predates the check, put there the way any old data would be.
+  const file = join(root, 'objects', 'projects', 'P-001.yaml')
+  writeFileSync(file, readFileSync(file, 'utf-8').replace('status: AtRisk', 'status: OffTheRails'))
+
+  const graph = loadGraph(root)
+  const { tools } = deriveWriteTools(graph, { audit: () => {}, now: CLOCK, roles: ANALYST })
+  writeTool(tools).execute(
+    { type: 'Project', id: 'P-001', data: { customer: 'CUST-ACME' } },
+    { agentId: 'analyst-session-1' },
+  )
+
+  // The unrelated correction landed. Reporting the old value belongs to a load-time check,
+  // where it can be seen without holding every later write hostage to it.
+  assert.equal(graph.byId.get('Project:P-001')?.data.customer, 'CUST-ACME')
 })
 
 test('a second write merges into the existing entity rather than replacing it', (t) => {
