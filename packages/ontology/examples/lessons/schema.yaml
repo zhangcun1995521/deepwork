@@ -61,6 +61,14 @@ object_types:
       # it — and not to whoever vouched for it either. Three grants, three answers.
       applied_count: { type: integer, increment_by: [practitioner] }
 
+    # The same vouched-for set a read returns, handed to the agent as skills it can load. One
+    # declaration answers both questions, which is the point: what a reader is shown and what the
+    # agent may load are the same answer, and a candidate is in neither.
+    skill:
+      description: rule
+      when_to_use: applies_to
+      body: rule
+
   # A verdict is an ordinary object. The engine does not know it is a judgement; the domain
   # says so, and the `requires_review` above names the three fields that carry it.
   Verdict:

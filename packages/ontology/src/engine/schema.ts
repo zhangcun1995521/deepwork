@@ -79,8 +79,27 @@ export interface ObjectTypeDecl {
    * Undefined means writes behave as plain field edits, with no state to enforce.
    */
   lifecycle?: LifecycleDecl
+  /**
+   * How to turn this type's instances into skills the agent can load, when the domain says to.
+   *
+   * Declared per type rather than inferred, because which field is the instruction and which is
+   * the routing line is a fact about the domain and nothing else can guess it. The set exposed
+   * is the set a read would return — the lifecycle's default state — so "what a reader is given"
+   * and "what the agent may load" stay the same answer from the same declaration.
+   */
+  skill?: SkillDecl
   /** The declaration as parsed, for anything this shape does not model yet. */
   raw: Record<string, unknown>
+}
+
+/** Which fields carry what a skill needs. */
+export interface SkillDecl {
+  /** Field holding the short routing description. */
+  description: string
+  /** Field holding extra routing guidance, when one is declared. */
+  whenToUse?: string
+  /** Field holding the instructions the agent loads. */
+  body: string
 }
 
 /** A relation type: a named, directed edge between two object types. */
@@ -214,6 +233,67 @@ function resolvePrimaryKey(
 }
 
 /**
+ * Read a type's `skill` declaration: which fields carry an experience worth handing to an agent.
+ *
+ * Everything is required except the routing hint, and every named field must exist, because a
+ * skill built from a field the type does not have would arrive empty — a declaration that cannot
+ * take effect, which is the failure this project exists to catch rather than to ship.
+ *
+ * A type with no `default_state` is refused rather than defaulted to "every instance". The point
+ * of the mechanism is that only experience somebody upheld becomes loadable, and a domain that
+ * has not said which state is the vouched-for one has not answered that question. Reads ask the
+ * same declaration the same thing, so what a reader is given and what the agent may load stay
+ * one answer.
+ */
+function parseSkillDecl(
+  raw: unknown,
+  typeName: string,
+  fields: Record<string, FieldDecl>,
+  defaultState: string | undefined,
+  warnings: string[],
+): SkillDecl | undefined {
+  if (raw === undefined || raw === null) return undefined
+  if (!isMapping(raw)) {
+    warnings.push(`object type "${typeName}": "skill" is not a mapping; ignored`)
+    return undefined
+  }
+
+  const description = typeof raw.description === 'string' ? raw.description : ''
+  const body = typeof raw.body === 'string' ? raw.body : ''
+  const whenToUse = typeof raw.when_to_use === 'string' ? raw.when_to_use : ''
+  const missing = [
+    description.length === 0 ? 'description' : '',
+    body.length === 0 ? 'body' : '',
+  ].filter((part) => part.length > 0)
+  if (missing.length > 0) {
+    warnings.push(
+      `object type "${typeName}": "skill" declares no ${missing.join(', ')}; no skill is exposed`,
+    )
+    return undefined
+  }
+
+  const named = [description, body, ...(whenToUse.length === 0 ? [] : [whenToUse])]
+  const unknown = named.filter((field) => fields[field] === undefined)
+  if (unknown.length > 0) {
+    warnings.push(
+      `object type "${typeName}": "skill" names fields ${unknown.join(', ')}, which the type does ` +
+        'not declare; no skill is exposed',
+    )
+    return undefined
+  }
+
+  if (defaultState === undefined) {
+    warnings.push(
+      `object type "${typeName}": "skill" has no state to draw from — the lifecycle declares no ` +
+        'default_state, so which experience has been upheld is not stated',
+    )
+    return undefined
+  }
+
+  return { description, body, ...(whenToUse.length === 0 ? {} : { whenToUse }) }
+}
+
+/**
  * Parse and validate a domain pack's `schema.yaml`.
  *
  * Throws when the schema file cannot be read or is not a mapping — see the module
@@ -260,14 +340,16 @@ export function parseSchema(root: string): OntologySchema {
     const requiredFields = asStringList(decl.required_fields) ?? []
     // Parsed once, so a malformed declaration warns once rather than once per use.
     const lifecycle = parseLifecycle(decl.lifecycle, name, warnings)
+    const fields = asFieldMap(decl.fields)
     const { primaryKey, source } = resolvePrimaryKey(name, decl, requiredFields, warnings)
+    const skill = parseSkillDecl(decl.skill, name, fields, lifecycle?.defaultState, warnings)
 
     objectTypes.set(name, {
       name,
       primaryKey,
       primaryKeySource: source,
       requiredFields,
-      fields: asFieldMap(decl.fields),
+      fields,
       fileLocation,
       // `file_location` names a file pattern like `objects/patterns/TP-*.yaml`;
       // its directory is what holds the instances. posix.dirname keeps this
@@ -278,6 +360,7 @@ export function parseSchema(root: string): OntologySchema {
       // Undefined here is a real answer: the type has no lifecycle, so no state is
       // enforced and nothing pretends otherwise.
       ...(lifecycle === undefined ? {} : { lifecycle }),
+      ...(skill === undefined ? {} : { skill }),
       raw: decl,
     })
   }

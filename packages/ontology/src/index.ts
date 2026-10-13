@@ -20,6 +20,7 @@ import {
 } from './govern/audit.ts'
 import { writeGuard } from './govern/guard.ts'
 import type { RoleRule } from './govern/permission.ts'
+import { experienceSkills, type ExperienceSkill } from './skills.ts'
 import { registerOntologyTools, type ToolRegistry } from './tools/register.ts'
 import { domainSnapshot } from './web.ts'
 
@@ -61,10 +62,23 @@ export interface OntologyContext {
   }
   /**
    * Run `callback` once a context carrying the named services exists, or never if it
-   * never does. Optional, and deliberately so: a headless profile has no web server,
-   * and this plugin must still load its domain and register its tools there.
+   * never does. Optional, and deliberately so: a headless profile has no web server and a bare
+   * one has no skill registry, and this plugin must load its domain and register its tools in
+   * both. The caller names the shape it expects, because the host's own service types are not
+   * imported here — the package depends on nothing from the host, which is what lets the engine
+   * be tested without one.
    */
-  inject?(names: readonly string[], callback: (scoped: WebSurface) => void): void
+  inject?<Service>(names: readonly string[], callback: (scoped: Service) => void): void
+}
+
+/** The skill registry a profile provides, when it has one. */
+export interface SkillSurface {
+  skills: {
+    /** Contribute one skill. The returned callback releases it. */
+    register(skill: ExperienceSkill): () => void
+  }
+  /** Tie a contribution to this plugin's lifetime, the way the web route is tied. */
+  effect?(callback: () => () => void, label?: string): void
 }
 
 /** The web surface a web-carrying profile provides. */
@@ -195,7 +209,7 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
   // The panel's data, served over the same origin as the UI that reads it. Registered
   // lazily and optionally: only web-carrying profiles have a web server, and everything
   // above has to work identically without one.
-  ctx.inject?.(['webServer'], (web) => {
+  ctx.inject?.(['webServer'], (web: WebSurface) => {
     web.effect(
       () =>
         web.webServer.register({
@@ -206,6 +220,30 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
       'deepwork-ontology: domain route',
     )
   })
+
+  // The domain's vouched-for experience, offered as skills. Registered the same lazy way and for
+  // the same reason: a profile may have no skill registry, and everything above has to work
+  // identically without one.
+  //
+  // Registered at load, which is a real limit worth stating: experience promoted *during* this
+  // process is not in the catalog until it restarts. Promotion is the rare event — an agent
+  // verifies what it learned, a human signs off — so the alternative, re-registering the whole
+  // catalog on every write, would pay for itself only in the case that never happens.
+  const { skills, notes: skillNotes } = experienceSkills(graph)
+  for (const note of skillNotes) warn(ctx, note)
+  if (skills.length > 0) {
+    ctx.inject?.(['skills'], (registry: SkillSurface) => {
+      registry.effect?.(
+        () => {
+          const disposers = skills.map((skill) => registry.skills.register(skill))
+          return () => {
+            for (const dispose of disposers) dispose()
+          }
+        },
+        'deepwork-ontology: experience skills',
+      )
+    })
+  }
 }
 
 /**

@@ -169,7 +169,7 @@ objects
 
 That second run is a governance model in fifteen lines, and not one of them was written by
 hand: it is the domain, read back. The enforcement behind those lines is described under
-[Governance](#governance) and checked by 161 tests.
+[Governance](#governance) and checked by 167 tests.
 
 ## What it looks like when an agent uses it
 
@@ -201,7 +201,7 @@ Working and demonstrated, not finished.
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-161 tests in total.
+167 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
@@ -393,6 +393,40 @@ it, each of them being a passing verdict about the same engagement. A requiremen
 name a second field and value the verdict has to carry (`scope: { field: gate, value: build }`),
 so one signature opens one gate. It is declared per requirement rather than solved by giving each
 gate its own verdict type, because that would mean granting a signer once per gate.
+
+## Vouched-for experience, as skills
+
+A skill is know-how — how to do a thing. The ontology is know-*what*. The two meet at one
+declaration: a type says which of its fields carry an experience, and the set exposed as skills
+is the set a read returns, drawn from the lifecycle's `default_state` — the state the domain
+called vouched-for.
+
+```yaml
+  Lesson:
+    lifecycle:
+      field: status
+      initial: candidate
+      default_state: verified        # what a read returns
+      states: [candidate, verified, rejected]
+    skill:                           # and what an agent may load
+      description: rule
+      when_to_use: applies_to
+      body: rule
+```
+
+One declaration answers both questions, so a candidate is in neither answer. That is the part a
+skill catalog cannot do on its own: a catalog offers everything and lets the model choose; this
+offers what somebody upheld, and the agent sees it in the catalog it already uses.
+
+Verified end to end: with that domain loaded, the agent's own skill listing contains
+`lesson-les-001` and not the candidate beside it. Six tests run the mapping, including the two
+ways it can fail — a skill naming a field the type does not declare, and a vouched-for object
+whose named field is empty.
+
+Two limits, stated rather than implied. **Routing stays with the model** — this decides what is in
+the catalog, not whether the agent loads it. And **the catalog is built at load**, so experience
+promoted during the same process appears after a restart; promotion is rare enough that
+re-registering on every write would cost more than it buys.
 
 ## Design notes
 

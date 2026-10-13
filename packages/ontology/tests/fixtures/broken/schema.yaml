@@ -12,6 +12,12 @@ object_types:
     fields:
       widget_id: { type: string, required: true }
       mounts: { type: ref, to: Gadget }
+    # A skill built from a field the type does not declare would arrive empty, which is a
+    # declaration that cannot take effect — so it is refused here rather than discovered by an
+    # agent loading a skill with nothing in it.
+    skill:
+      description: widget_id
+      body: mounts_typo
 
   Gadget:
     # No `file_location`: there is nowhere to look for instances.
