@@ -50,6 +50,10 @@ export type DenialReason =
   | 'invalid-increment'
   | 'not-a-counter'
   | 'increment-not-permitted'
+  // Review refusals: a move that needed an independent verdict and did not get one.
+  | 'review-required'
+  | 'self-review-not-allowed'
+  | 'review-producer-unknown'
 
 /** The outcome of a permission check. */
 export type Permission =

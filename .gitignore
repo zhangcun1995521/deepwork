@@ -26,3 +26,6 @@ __pycache__/
 _*.txt
 _*.json
 dsh-web.log
+
+# The sandbox own record of who wrote what. Like the audit trail, not domain data.
+.provenance.jsonl

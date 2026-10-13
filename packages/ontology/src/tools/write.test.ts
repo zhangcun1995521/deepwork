@@ -269,13 +269,20 @@ test('the write tool offers a closed enum of declared types', () => {
 const CURATOR: readonly RoleRule[] = [{ prefix: 'curator-session-', role: 'curator' }]
 const EDITOR: readonly RoleRule[] = [{ prefix: 'editor-session-', role: 'editor' }]
 const EXECUTOR: readonly RoleRule[] = [{ prefix: 'exec-session-', role: 'executor' }]
+const REVIEWER: readonly RoleRule[] = [{ prefix: 'reviewer-session-', role: 'reviewer' }]
+const ENGINEER: readonly RoleRule[] = [{ prefix: 'engineer-session-', role: 'engineer' }]
 
-test('a promotion the schema grants is written, and audited as a write', () => {
+test('a promotion the schema grants is written, once an independent verdict exists', () => {
   const root = scratchDomain('lifecycle')
   const graph = loadGraph(root)
   const { entries, audit } = collector()
-  const { tools } = deriveWriteTools(graph, { audit, now: CLOCK, roles: CURATOR })
+  const { tools } = deriveWriteTools(graph, { audit, now: CLOCK, roles: [...CURATOR, ...REVIEWER] })
 
+  // Somebody other than the promoter records the verdict the domain asks for.
+  writeTool(tools).execute(
+    { type: 'Verdict', id: 'VER-2', data: { subject: 'PAT-B', outcome: 'approved' } },
+    { agentId: 'reviewer-session-1' },
+  )
   writeTool(tools).execute(
     { type: 'Pattern', id: 'PAT-B', data: { status: 'verified' } },
     { agentId: 'curator-session-1' },
@@ -283,7 +290,43 @@ test('a promotion the schema grants is written, and audited as a write', () => {
 
   const written = readFileSync(join(root, 'objects/patterns/PAT-B.yaml'), 'utf8')
   assert.match(written, /status: verified/)
-  assert.equal(entries[0]?.outcome, 'allowed')
+  assert.equal(entries.at(-1)?.outcome, 'allowed')
+})
+
+test('a shipped verdict with no provenance is not treated as a review', () => {
+  // The fixture ships VER-1 approving PAT-B. Nothing recorded who wrote it, so it does not
+  // count: "we cannot tell who reviewed this" is not "somebody did".
+  const root = scratchDomain('lifecycle')
+  const graph = loadGraph(root)
+  const { entries, audit } = collector()
+  const { tools } = deriveWriteTools(graph, { audit, now: CLOCK, roles: CURATOR })
+
+  assert.throws(
+    () =>
+      writeTool(tools).execute(
+        { type: 'Pattern', id: 'PAT-B', data: { status: 'verified' } },
+        { agentId: 'curator-session-1' },
+      ),
+    /write denied \(review-producer-unknown\)/,
+  )
+  assert.match(entries.at(-1)?.detail ?? '', /cannot establish who produced it/)
+})
+
+test('a promotion with no verdict at all is refused, and names what was wanted', () => {
+  const root = scratchDomain('lifecycle')
+  const graph = loadGraph(root)
+  const { entries, audit } = collector()
+  const { tools } = deriveWriteTools(graph, { audit, now: CLOCK, roles: CURATOR })
+
+  assert.throws(
+    () =>
+      writeTool(tools).execute(
+        { type: 'Pattern', id: 'PAT-B', data: { status: 'verified' } },
+        { agentId: 'curator-session-1' },
+      ),
+    /write denied \((review-required|review-producer-unknown)\)/,
+  )
+  assert.equal(readFileSync(join(root, 'objects/patterns/PAT-B.yaml'), 'utf8').includes('candidate'), true)
 })
 
 test('a role that may write the type may still be refused the move', () => {
@@ -423,4 +466,73 @@ test('a counter that does not exist yet starts from zero rather than failing', (
     { agentId: 'exec-session-1' },
   )
   assert.match(readFileSync(join(root, 'objects/patterns/PAT-B.yaml'), 'utf8'), /hits: 1/)
+})
+
+// ── domain B: the same mechanism, different words ───────────────────────────────
+// A deliverable is signed off by a sign-off, not a pattern verified by a verdict. If the
+// mechanism had quietly grown a dependency on the pattern domain, these would fail.
+
+test('the review requirement works in a second, unrelated domain', () => {
+  const root = scratchDomain('review-delivery')
+  const graph = loadGraph(root)
+  const { entries, audit } = collector()
+  const { tools } = deriveWriteTools(graph, { audit, now: CLOCK, roles: [...ENGINEER, ...REVIEWER] })
+
+  // Zero approval attempts: the delivered fixture ships SIG-1, but nothing records its
+  // producer, so it does not count.
+  assert.throws(
+    () =>
+      writeTool(tools).execute(
+        { type: 'Deliverable', id: 'DEL-1', data: { state: 'signed_off' } },
+        { agentId: 'engineer-session-1' },
+      ),
+    /write denied \(review-producer-unknown\)/,
+  )
+
+  writeTool(tools).execute(
+    { type: 'Signoff', id: 'SIG-2', data: { deliverable: 'DEL-1', decision: 'signed' } },
+    { agentId: 'reviewer-session-1' },
+  )
+  writeTool(tools).execute(
+    { type: 'Deliverable', id: 'DEL-1', data: { state: 'signed_off' } },
+    { agentId: 'engineer-session-1' },
+  )
+
+  assert.match(readFileSync(join(root, 'objects/deliverables/DEL-1.yaml'), 'utf8'), /state: signed_off/)
+  assert.equal(entries.at(-1)?.outcome, 'allowed')
+})
+
+test('a sign-off for a different deliverable does not sign this one off', () => {
+  const root = scratchDomain('review-delivery')
+  const graph = loadGraph(root)
+  const { audit } = collector()
+  const { tools } = deriveWriteTools(graph, { audit, now: CLOCK, roles: [...ENGINEER, ...REVIEWER] })
+
+  writeTool(tools).execute(
+    { type: 'Signoff', id: 'SIG-3', data: { deliverable: 'DEL-99', decision: 'signed' } },
+    { agentId: 'reviewer-session-1' },
+  )
+  assert.throws(
+    () =>
+      writeTool(tools).execute(
+        { type: 'Deliverable', id: 'DEL-1', data: { state: 'signed_off' } },
+        { agentId: 'engineer-session-1' },
+      ),
+    /write denied \(review-(required|producer-unknown)\)/,
+  )
+})
+
+test('a produce-only write is recorded as provenance for the next check', () => {
+  const root = scratchDomain('review-delivery')
+  const graph = loadGraph(root)
+  const { audit } = collector()
+  const { tools } = deriveWriteTools(graph, { audit, now: CLOCK, roles: [...ENGINEER, ...REVIEWER] })
+
+  writeTool(tools).execute(
+    { type: 'Signoff', id: 'SIG-4', data: { deliverable: 'DEL-1', decision: 'signed' } },
+    { agentId: 'reviewer-session-1' },
+  )
+  // Read back through the same file the enforcement reads, not through the graph.
+  const recorded = readFileSync(join(root, '.provenance.jsonl'), 'utf8')
+  assert.match(recorded, /"type":"Signoff","id":"SIG-4","agentId":"reviewer-session-1"/)
 })

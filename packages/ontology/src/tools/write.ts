@@ -26,6 +26,9 @@ import { join } from 'node:path'
 import { dump as dumpYaml } from 'js-yaml'
 
 import { refreshGraph, type OntologyGraph } from '../engine/graph.ts'
+import { PROVENANCE_FILE, appendProvenance, readProvenance } from '../engine/provenance.ts'
+import { authoriseReview } from '../govern/review.ts'
+import type { ReviewRequirement } from '../engine/lifecycle.ts'
 import type { AuditEntry } from '../govern/audit.ts'
 import { authoriseTransition } from '../govern/lifecycle.ts'
 import {
@@ -257,6 +260,7 @@ export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): D
       // below — the reference implementation wrote the file directly from its own
       // promotion code and quietly bypassed both.
       const lifecycle = type.lifecycle
+      let requiredReview: ReviewRequirement | undefined
       if (lifecycle !== undefined && Object.hasOwn(data, lifecycle.field)) {
         const onDisk = existing?.data[lifecycle.field]
         const transition = authoriseTransition(
@@ -265,7 +269,31 @@ export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): D
           data[lifecycle.field],
           callerRole,
         )
+        const review = transition.allowed && transition.change ? transition.transition?.review : undefined
         if (!transition.allowed) deny(transition.reason, transition.detail)
+        requiredReview = review
+      }
+
+      // A move the domain says needs a second pair of eyes. Checked against provenance the
+      // platform recorded, never against a field the caller could have filled in: the whole
+      // point is that the author cannot certify itself, and a self-declared reviewer field
+      // would make that an honour system.
+      if (requiredReview !== undefined) {
+        const verdicts = (graph.byType.get(requiredReview.type) ?? []).map((object) => ({
+          type: object.type,
+          id: object.id,
+          data: object.data,
+        }))
+        const { producers, unreadable } = readProvenance(join(graph.root, PROVENANCE_FILE))
+        const review = authoriseReview({
+          requirement: requiredReview,
+          subjectId: id,
+          verdicts,
+          producerOf: (verdict) => producers.get(`${verdict.type}:${verdict.id}`),
+          ...(call?.agentId === undefined ? {} : { callerAgentId: call.agentId }),
+          unreadable,
+        })
+        if (!review.allowed) deny(review.reason, review.detail)
       }
 
       const merged: Record<string, unknown> = {
@@ -291,6 +319,13 @@ export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): D
       }
 
       writeFileSync(file, dumpYaml(merged, { lineWidth: 120, noRefs: true }))
+      // Recorded before the refresh, so a later read in the same process sees it.
+      appendProvenance(join(graph.root, PROVENANCE_FILE), {
+        at: now().toISOString(),
+        type: typeName,
+        id,
+        ...(call?.agentId === undefined ? {} : { agentId: call.agentId }),
+      })
       refreshGraph(graph)
 
       options.audit({

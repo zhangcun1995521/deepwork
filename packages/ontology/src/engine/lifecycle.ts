@@ -12,6 +12,29 @@
  * @module @zhangcun123/ontology/engine/lifecycle
  */
 
+/**
+ * A declared precondition on a move: a passing verdict must exist for the subject.
+ *
+ * The platform owns this mechanism, the domain owns the object that carries the verdict.
+ * That split is the whole point — the same three lines of YAML can require a sign-off on
+ * a delivery, an approval on a contract, or a review on a piece of knowledge, and the
+ * engine never learns what any of them mean.
+ *
+ * Independence is checked against provenance the platform recorded itself, not against a
+ * field the model filled in: a reviewer that can name its own id as the producer is not a
+ * control, it is a form.
+ */
+export interface ReviewRequirement {
+  /** Object type whose instances are verdicts about the subject. */
+  type: string
+  /** Field on that type holding the reviewed object's id. */
+  link: string
+  /** Field on that type holding the verdict. */
+  field: string
+  /** Value of that field that means the verdict passed. */
+  pass: string
+}
+
 /** One declared move between states. */
 export interface TransitionDecl {
   /** Transition name, as declared under `transitions`. */
@@ -22,6 +45,8 @@ export interface TransitionDecl {
   to: string
   /** Roles permitted to perform it. */
   by: string[]
+  /** A passing, independently produced verdict this move requires, when it requires one. */
+  review?: ReviewRequirement
 }
 
 /** A declared lifecycle, normalised. */
@@ -62,6 +87,47 @@ function stringList(value: unknown): string[] | undefined {
  * which means writes to that type behave as they did before — no enforcement, and no
  * pretence of it.
  */
+/**
+ * Read a transition's `requires_review` declaration.
+ *
+ * All four parts are required: a requirement missing its verdict field or its passing
+ * value would be a rule that can never be satisfied, and silently enforcing one of those
+ * is worse than not declaring it at all — the domain would believe a control exists.
+ */
+function parseReviewRequirement(
+  raw: unknown,
+  typeName: string,
+  transition: string,
+  warnings: string[],
+): ReviewRequirement | undefined {
+  if (raw === undefined || raw === null) return undefined
+  if (!isMapping(raw)) {
+    warnings.push(
+      `object type "${typeName}": transition "${transition}" requires_review is not a mapping; ignored`,
+    )
+    return undefined
+  }
+  const type = typeof raw.type === 'string' ? raw.type : ''
+  const link = typeof raw.link === 'string' ? raw.link : ''
+  const field = typeof raw.field === 'string' ? raw.field : ''
+  const pass = typeof raw.pass === 'string' ? raw.pass : ''
+  const missing = [
+    type.length === 0 ? 'type' : '',
+    link.length === 0 ? 'link' : '',
+    field.length === 0 ? 'field' : '',
+    pass.length === 0 ? 'pass' : '',
+  ].filter((part) => part.length > 0)
+
+  if (missing.length > 0) {
+    warnings.push(
+      `object type "${typeName}": transition "${transition}" requires_review declares no ` +
+        `${missing.join(', ')}; the requirement is ignored and the move goes unchecked`,
+    )
+    return undefined
+  }
+  return { type, link, field, pass }
+}
+
 export function parseLifecycle(
   raw: unknown,
   typeName: string,
@@ -132,7 +198,14 @@ export function parseLifecycle(
           `object type "${typeName}": transition "${name}" names no roles, so nobody may perform it`,
         )
       }
-      transitions.push({ name, from, to, by })
+      const review = parseReviewRequirement(value.requires_review, typeName, name, warnings)
+      transitions.push({
+        name,
+        from,
+        to,
+        by,
+        ...(review === undefined ? {} : { review }),
+      })
     }
   }
 

@@ -23,7 +23,18 @@ object_types:
       states: [candidate, verified]
       default_state: verified
       transitions:
-        verify: { from: [candidate], to: verified, by: [curator] }
+        verify:
+          from: [candidate]
+          to: verified
+          by: [curator]
+          # Vouching for a claim needs a second pair of eyes, and the platform checks
+          # that against its own record of who wrote the verdict — not against a field
+          # the caller could fill in.
+          requires_review:
+            type: Verdict
+            link: subject
+            field: outcome
+            pass: approved
     fields:
       pattern_id: { type: string, required: true }
       status: { type: string, required: true }
@@ -31,6 +42,18 @@ object_types:
       # A counter, and who may move it: an executor records that knowledge was used, the
       # curator owns the claim itself.
       hits: { type: integer, increment_by: [executor] }
+
+  # A verdict is an ordinary object. The engine does not know it means a judgement; the
+  # domain says so, and the requirement above names the three fields that carry it.
+  Verdict:
+    primary_key: verdict_id
+    required_fields: [verdict_id, subject, outcome]
+    file_location: objects/verdicts/VER-*.yaml
+    written_by: [reviewer]
+    fields:
+      verdict_id: { type: string, required: true }
+      subject: { type: string, required: true }
+      outcome: { type: string, required: true }
 
 link_types: {}
 functions: {}

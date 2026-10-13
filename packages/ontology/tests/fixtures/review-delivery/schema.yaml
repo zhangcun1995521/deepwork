@@ -1,0 +1,46 @@
+version: "1.0"
+
+# Domain B, for the same mechanism wearing different words.
+#
+# Nothing here is shared with the pattern domain except the shape of the declaration:
+# `state` instead of `status`, `decision`/`signed` instead of `outcome`/`approved`,
+# `deliverable` instead of `subject`, a sign-off instead of a review. If the mechanism were
+# secretly about knowledge reviews, this domain would not work — and that is the test.
+
+object_types:
+  Deliverable:
+    primary_key: deliverable_id
+    required_fields: [deliverable_id, state, title]
+    file_location: objects/deliverables/DEL-*.yaml
+    written_by: [engineer]
+    lifecycle:
+      field: state
+      initial: draft
+      states: [draft, signed_off]
+      transitions:
+        sign_off:
+          from: [draft]
+          to: signed_off
+          by: [engineer]
+          requires_review:
+            type: Signoff
+            link: deliverable
+            field: decision
+            pass: signed
+    fields:
+      deliverable_id: { type: string, required: true }
+      state: { type: string, required: true }
+      title: { type: string, required: true }
+
+  Signoff:
+    primary_key: signoff_id
+    required_fields: [signoff_id, deliverable, decision]
+    file_location: objects/signoffs/SIG-*.yaml
+    written_by: [reviewer]
+    fields:
+      signoff_id: { type: string, required: true }
+      deliverable: { type: string, required: true }
+      decision: { type: string, required: true }
+
+link_types: {}
+functions: {}
