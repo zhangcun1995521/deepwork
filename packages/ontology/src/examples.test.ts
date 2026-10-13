@@ -23,6 +23,7 @@ import { deriveActionTools } from './tools/actions.ts'
 import type { DerivedToolSpec } from './tools/derive.ts'
 import { deriveTools } from './tools/derive.ts'
 import { deriveWriteTools } from './tools/write.ts'
+import { experienceSkills } from './skills.ts'
 
 const example = (name: string): string =>
   fileURLToPath(new URL(`../examples/${name}`, import.meta.url))
@@ -275,4 +276,72 @@ test('the gated move is also refused when it is asked for through the declared a
     /review-required/,
   )
   assert.equal(entries.at(-1)?.action, 'action:start_build')
+})
+
+// ── the loop, both directions ───────────────────────────────────────────────────
+//
+// `lessons` is the domain where experience travels: an agent writes down what it learned, a
+// second party vouches for it, and only then does it become something the agent can load. These
+// pin the whole circuit — including the move that must not exist, which is vouching for itself.
+
+test('experience goes in as a candidate, comes out as a skill only on a verdict', (t) => {
+  const { graph, tools } = surfaceOf('lessons', [CONTRIBUTOR, CURATOR, VERIFIER], t)
+  const write = tool(tools, 'ontology_write')
+  const skills = () => experienceSkills(graph).skills.map((skill) => skill.name)
+
+  assert.deepEqual(skills(), ['lesson-les-001'], 'the domain starts with one vouched-for lesson')
+
+  // In. The action names the step, and what it creates is a candidate.
+  run(
+    tool(tools, 'record_lesson'),
+    {
+      lesson_id: 'LES-900',
+      status: 'candidate',
+      rule: 'A migration and its rollback belong in the same change.',
+      applies_to: 'artifact:migration',
+    },
+    'contributor-session-1',
+  )
+  assert.equal(graph.byId.get('Lesson:LES-900')?.data.status, 'candidate')
+  assert.deepEqual(skills(), ['lesson-les-001'], 'and it is not loadable yet')
+
+  // The move that must not exist: arriving already vouched for. Two refusals, in the order the
+  // write path asks its questions — the mover's role is settled first, then what the move
+  // requires. A contributor may not make this move at all; a curator may make it and cannot make
+  // it without a verdict. So a lesson cannot certify itself by being born.
+  assert.throws(
+    () =>
+      run(
+        write,
+        { type: 'Lesson', id: 'LES-901', data: { status: 'verified', rule: 'Mine.' } },
+        'contributor-session-1',
+      ),
+    /transition-not-permitted/,
+  )
+  assert.throws(
+    () =>
+      run(
+        write,
+        { type: 'Lesson', id: 'LES-902', data: { status: 'verified', rule: 'Mine.' } },
+        'curator-session-1',
+      ),
+    /review-required/,
+  )
+  assert.equal(graph.byId.has('Lesson:LES-901'), false)
+  assert.equal(graph.byId.has('Lesson:LES-902'), false)
+
+  // Somebody else vouches, and the move is made by a role that is not that somebody.
+  run(
+    write,
+    { type: 'Verdict', id: 'VER-900', data: { lesson: 'LES-900', outcome: 'uphold' } },
+    'verifier-session-1',
+  )
+  run(
+    tool(tools, 'uphold_lesson'),
+    { lesson_id: 'LES-900', status: 'verified' },
+    'curator-session-1',
+  )
+
+  // Out. The catalog the agent reads now contains it — built from the same state a read uses.
+  assert.deepEqual(skills(), ['lesson-les-001', 'lesson-les-900'])
 })

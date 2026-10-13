@@ -169,7 +169,7 @@ objects
 
 That second run is a governance model in fifteen lines, and not one of them was written by
 hand: it is the domain, read back. The enforcement behind those lines is described under
-[Governance](#governance) and checked by 167 tests.
+[Governance](#governance) and checked by 168 tests.
 
 ## What it looks like when an agent uses it
 
@@ -201,7 +201,7 @@ Working and demonstrated, not finished.
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-167 tests in total.
+168 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
@@ -422,6 +422,24 @@ Verified end to end: with that domain loaded, the agent's own skill listing cont
 `lesson-les-001` and not the candidate beside it. Six tests run the mapping, including the two
 ways it can fail — a skill naming a field the type does not declare, and a vouched-for object
 whose named field is empty.
+
+### The circuit, both ways
+
+Experience comes *in* and goes *out* through the same two declarations, and one action names each
+direction:
+
+```yaml
+action_types:
+  record_lesson:  { use: create, target: Lesson }   # in: experience arrives as a candidate
+  uphold_lesson:  { use: update, target: Lesson }   # the move, once somebody else vouches
+```
+
+An agent that learns something calls `record_lesson` and it lands as a `candidate` — recorded, and
+not loadable. A second party writes a verdict; a third role makes the move; the lesson becomes
+`verified` and appears in the catalog the agent reads. The test walks that whole circuit over a
+throwaway copy, including the move that must not exist: a lesson cannot arrive already vouched
+for. Asked as a contributor that is refused by the role, and asked as a curator it is refused for
+want of a verdict — the write path settles the mover before it settles what the move needs.
 
 Two limits, stated rather than implied. **Routing stays with the model** — this decides what is in
 the catalog, not whether the agent loads it. And **the catalog is built at load**, so experience

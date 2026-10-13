@@ -92,6 +92,13 @@ link_types:
 functions: {}
 
 action_types:
+  # The first half of the loop: experience comes *in*. A candidate is what an agent writes down
+  # when it learns something, and it is deliberately not usable yet — `status` defaults to
+  # nothing here, so the caller states it, and the one value that makes it loadable is the one
+  # nobody may set for themselves.
+  record_lesson:
+    use: create
+    target: Lesson
   # The same move as the transition, offered as a named action. It exists to make the point
   # that an action is a shell over the write path: calling this does not take a shortcut past
   # the verdict requirement, and it lands in the trail under the action's own name.
