@@ -116,7 +116,7 @@ A real session, with the query modes the agent chose and the answer it reached â
 details that only a declared world can produce: it refused to invent a project name the schema
 does not declare, and it drew a conclusion that needed the graph rather than a lookup.
 
-[docs/agent-session.md](docs/agent-session.md)
+[docs/agent-session.md](docs/agent-session.md) â€” and the [same domain asked in Chinese](docs/agent-session-zh.md), where the agent reached the same four declared queries
 
 ## Status
 
