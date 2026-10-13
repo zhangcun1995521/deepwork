@@ -25,7 +25,11 @@ __pycache__/
 # Scratch: local probe output that must never be committed.
 _*.txt
 _*.json
-dsh-web.log
+
+# Any dsh run log. This was a list of exact names, and the second name was missed — so the file
+# landed in the repository with a live session token in it. A glob states the rule instead of
+# enumerating what happened to be there the day it was written.
+dsh-*.log
 
 # The sandbox own record of who wrote what. Like the audit trail, not domain data.
 .provenance.jsonl
