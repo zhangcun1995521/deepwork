@@ -6,7 +6,9 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dsh": "dsh"
+    "dsh": "dsh",
+    "demo": "node packages/ontology/scripts/show-derivation.ts packages/ontology/examples/project-delivery",
+    "demo:lifecycle": "node packages/ontology/scripts/show-derivation.ts packages/ontology/tests/fixtures/review-delivery --roles [{\"prefix\":\"session-\",\"role\":\"engineer\"}]"
   },
   "devDependencies": {
     "@deepseek-ai/dsh": "0.1.7-rc.2"
