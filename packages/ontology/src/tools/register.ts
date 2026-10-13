@@ -60,9 +60,32 @@ export interface RegisterableTool {
   execute: (args: ToolArgs, exec?: ExecutionContext) => Promise<QueryResult> | QueryResult
 }
 
+/** The shape the runtime hands a guard: its own tool-execution object. */
+export interface RuntimeToolCall {
+  readonly name: string
+  readonly arguments: unknown
+  /** The agent on whose behalf the call runs. Absent when no agent is in scope. */
+  readonly agent?: { readonly id: string }
+}
+
 /** The slice of a runtime tool registry this adapter needs. */
 export interface ToolRegistry {
   register(definition: RegisterableTool): unknown
+  /**
+   * Register a guard: a function the runtime calls before dispatching any tool, where
+   * a returned string refuses the call and `undefined` lets it through.
+   *
+   * The parameter is the runtime's own execution object. A guard written against a
+   * hand-made shape of our own would compile and then never see an agent identity,
+   * which is how a role check silently becomes a deny-everything check — this
+   * signature is the runtime's, so the adapter has to do the mapping explicitly.
+   *
+   * Optional, because a registry also exists in tests and in profiles that do not run
+   * the guard pipeline. Callers must say so out loud when it is missing rather than
+   * assume unrestricted writes are fine — a guard that quietly fails to mount is worse
+   * than one that was never written, because the domain still claims the rule applies.
+   */
+  guard?(guard: (call: RuntimeToolCall) => string | undefined): void
 }
 
 /** What registration produced, and what it could not. */

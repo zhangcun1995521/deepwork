@@ -21,3 +21,8 @@ packages/*/lib/
 __pycache__/
 *.py[cod]
 .venv/
+
+# Scratch: local probe output that must never be committed.
+_*.txt
+_*.json
+dsh-web.log

@@ -9,10 +9,16 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { loadGraph, type OntologyGraph } from './engine/graph.ts'
-import { appendAuditLine, formatAuditLine, type AuditEntry } from './govern/audit.ts'
+import {
+  appendAuditLine,
+  formatAuditLine,
+  formatGuardAuditLine,
+  type AuditEntry,
+} from './govern/audit.ts'
+import { writeGuard } from './govern/guard.ts'
 import type { RoleRule } from './govern/permission.ts'
 import { registerOntologyTools, type ToolRegistry } from './tools/register.ts'
 import { domainSnapshot } from './web.ts'
@@ -116,14 +122,70 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
     ...(writes === undefined ? {} : { writes }),
   })
 
+  // The write guard, mounted here rather than inside each tool.
+  //
+  // A check inside our own tools only covers our own tools: the runtime also ships a
+  // filesystem tool and a shell, and neither has read the domain. Mounted globally, this
+  // is the one place that sees every call, which is what makes "only this role may write
+  // here" a boundary instead of a statement of intent.
+  //
+  // It is mounted even when no roles are configured — with none, every write is refused,
+  // which is what "an unconfigured deployment is a read-only one" has to mean if it is
+  // to mean anything.
+  //
+  // The adapter is explicit because the two shapes are not the same: the runtime hands
+  // its own execution object (`agent.id`), and the guard reasons over a flat `agentId`.
+  // Passing the guard straight through compiled and then read no identity at all, which
+  // turned every write into a refusal for the wrong reason.
+  const policy = writeGuard({
+    cwd: process.cwd(),
+    ontologyRoot: resolve(ontologyRoot),
+    roles,
+    objectTypes: graph.schema.objectTypes.values(),
+    // The trail. Mounted even with writes disabled, because the refusals worth reading
+    // are exactly the ones that happen when nobody was allowed to write.
+    onDecision: (decision) =>
+      appendAuditLine(
+        auditLog,
+        formatGuardAuditLine({
+          at: new Date().toISOString(),
+          kind: 'guard',
+          tool: decision.tool,
+          outcome: decision.denied ? 'denied' : 'allowed',
+          ...(decision.agentId === undefined ? {} : { agentId: decision.agentId }),
+          ...(decision.role === undefined ? {} : { role: decision.role }),
+          ...(decision.target === undefined ? {} : { target: decision.target }),
+          ...(decision.reason === undefined ? {} : { reason: decision.reason }),
+          ...(decision.detail === undefined ? {} : { detail: decision.detail }),
+        }),
+      ),
+  })
+  const guardMounted = ctx.tools.guard !== undefined
+  ctx.tools.guard?.((call) =>
+    policy({
+      name: call.name,
+      arguments: call.arguments,
+      ...(call.agent?.id === undefined ? {} : { agentId: call.agent.id }),
+    }),
+  )
+
   const summary =
     `loaded "${graph.root}": ${graph.objects.length} entities, ${graph.links.length} relations, ` +
     `${graph.schema.objectTypes.size} types, ${registered.length} tools registered; ` +
     (writes === undefined
       ? 'writes disabled (no roles configured)'
-      : `writes enabled, audited to ${auditLog}`)
+      : `writes enabled, audited to ${auditLog}`) +
+    (guardMounted ? '; write guard mounted' : '; write guard NOT mounted')
   if (ctx.logger?.info !== undefined) ctx.logger.info(summary)
   else process.stderr.write(`[${name}] ${summary}\n`)
+
+  if (!guardMounted) {
+    warn(
+      ctx,
+      'the runtime exposes no tool guard, so writes made through tools this plugin did ' +
+        'not register (the filesystem tool, the shell) are unchecked',
+    )
+  }
 
   // Loading warnings first: a caller reading a log top-down should meet the domain's
   // problems before the derivation's, because a broken domain explains a lot of them.

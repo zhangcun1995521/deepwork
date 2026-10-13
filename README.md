@@ -57,14 +57,15 @@ Working and demonstrated, not finished.
 | Milestone | State |
 |---|---|
 | Plugin route — a third-party package installs and mounts in DSH | ✅ verified end to end |
-| Ontology engine — schema parsing, instance loading, relation derivation | ✅ 22 tests |
+| Ontology engine — schema parsing, instance loading, relation derivation | ✅ covered by the suite |
 | Derived tool surface — reads | ✅ verified with real agent turns |
 | Derived governance — writes, permissions, audit | ✅ verified with a real refusal and a real write |
+| Write guard — every tool call, not only ours | ✅ mounted globally; a real refusal and a real shell-redirect refusal observed, both audited |
 | Example domain — the demo scenario | ✅ end to end |
-| Workspace UI | not started |
+| Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-57 tests in total.
+89 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
@@ -93,21 +94,20 @@ To allow writes, say who may write. The role map is the gate:
 export DEEPWORK_ONTOLOGY_ROLES='[{"prefix":"session-","role":"delivery-lead"}]'
 ```
 
-## The workspace UI
+## Seeing what a domain derives
 
-```sh
-cd apps/workspace && node server.mjs      # http://127.0.0.1:4180
-```
+The panel lives inside DSH's own interface rather than beside it: one process, one origin,
+no second server to run and no RPC layer. Install the plugin into a profile, open DSH's web
+UI, and the **Ontology** row in the sidebar shows what the engine derived from the domain —
+the tool definitions with the JSON Schema of every argument, the object types with who may
+write them, and the relations with the field each one reads.
 
-Point it at a domain and it shows what the engine derived from it: the tool definitions
-with the JSON Schema of every argument, the object types with who may write them, and the
-relations with the field each one reads. Put a role map in the `roles` box and the write
-tool appears; leave it empty and the page explains why it does not.
+Put a role map in the `roles` box and the write tool appears in the listing; leave it empty
+and the page explains why it does not. That is the governance model answering a question out
+loud, from the running system, instead of from a document.
 
-No DSH, no API key, no build step — the engine is a pure library over a directory of
-YAML, so this is a viewer over a JSON document. Only domains named in `DEEPWORK_DOMAINS`
-(or the bundled example) are readable, because a path arriving from a browser is an
-arbitrary-read request.
+Only domains named in `DEEPWORK_DOMAINS` (or the bundled example) are readable, because a
+path arriving from a browser is an arbitrary-read request.
 
 ## What is in here
 
@@ -115,7 +115,6 @@ arbitrary-read request.
 |---|---|
 | `packages/ontology` | the plugin: engine, tool derivation, governance |
 | `packages/ontology/examples/project-delivery` | a complete synthetic domain to point at |
-| `apps/workspace` | the workspace UI: point it at a domain and see the derived tool surface |
 | `packages/probe` | the smallest possible plugin, kept as the smoke test for the plugin route |
 | `tools/fde` | the FDE toolkit: qualify a use case before anything gets built (Python, runs standalone) |
 | `PROJECT_STATE.md` | the working record: decisions, verified facts, environment pitfalls |
