@@ -56,6 +56,7 @@ and who approved it"; the team that inherits it six months later.
 them gated on a signature scoped to that stage, one declared action, one relation.
 
 ```sh
+corepack pnpm install            # once, right after cloning — nothing else is needed
 npm run validate                  # is it sound? exit 0 or a list of what did not take effect
 node packages/ontology/scripts/show-derivation.ts packages/ontology/examples/engagement
 ```
@@ -127,6 +128,7 @@ The picture is generated from the command below, not drawn, so it cannot drift f
 output (`node packages/ontology/scripts/render-demo-svg.ts`).
 
 ```sh
+corepack pnpm install            # once, right after cloning
 node packages/ontology/scripts/show-derivation.ts packages/ontology/examples/project-delivery
 ```
 
