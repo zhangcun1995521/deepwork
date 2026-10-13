@@ -33,3 +33,8 @@ dsh-*.log
 
 # The sandbox own record of who wrote what. Like the audit trail, not domain data.
 .provenance.jsonl
+
+# The working record. Written as notes, in the language of the work, which means it keeps
+# collecting internal project names and local paths — sanitising it was a losing game, and the
+# file that says so is the file that broke the rule. Not published, so there is nothing to leak.
+PROJECT_STATE.md

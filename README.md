@@ -226,6 +226,11 @@ does. Each of these was considered and declined, not overlooked.
 - **Not a fork**, and not a wrapper around one: a plugin, tracking upstream releases.
 - **Not credential storage.** A domain may point at a secret; the value stays in the host's
   credential seam and never enters the domain, the audit trail, or anything a model reads.
+- **Not the working record.** The decision log, the verified facts and the environment pitfalls
+  are kept locally and are not published. It is written as notes, in the language of the work,
+  which means it keeps collecting names and paths that do not belong in public — sanitising it
+  was a losing game, and the file that said so was the file that broke the rule. What a reader
+  loses is the sight of a working process; what it stops is the leak that process produces.
 
 And the honest half — what a reader will find missing:
 
@@ -333,7 +338,7 @@ domain was put through. `packages/ontology/tests/fixtures/ahead-of-its-data` now
 | `packages/ontology/examples/engagement` | a staged delivery: four phases, and the customer's signature scoped to the stage it opens, so the road opens one gate at a time |
 | `packages/probe` | the smallest possible plugin, kept as the smoke test for the plugin route |
 | `tools/fde` | the FDE toolkit: qualify a use case before anything gets built (Python, runs standalone) |
-| `PROJECT_STATE.md` | the working record: decisions, verified facts, environment pitfalls |
+| `docs` | two recorded agent sessions, the derivation picture, and the architecture picture |
 
 ## Governance — steps ③ to ⑥, in detail
 
