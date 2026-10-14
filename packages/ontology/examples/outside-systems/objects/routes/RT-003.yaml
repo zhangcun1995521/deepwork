@@ -1,0 +1,16 @@
+route_id: RT-003
+system: SYS-FERRY
+environment: production
+status: candidate
+auth_how: >-
+  A mutual-TLS client certificate issued per partner. The certificate and its key stay in the
+  host's credential seam; this domain records only which seam.
+via_proxy: true
+network_segment: partner-transit
+pitfalls:
+  - The partner's gateway resets a connection that arrives through the proxy without its session
+    header, and the reset arrives as a plain connection error.
+  - One push per closed delivery, not a batch: a nightly batch is rejected with no message.
+  - The partner rotates the certificate annually and the new one must be in the seam before the
+    old is revoked, which is a handover rather than a deployment.
+last_confirmed_on: "2026-10-01"

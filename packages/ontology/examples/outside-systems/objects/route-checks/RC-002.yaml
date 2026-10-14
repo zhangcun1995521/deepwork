@@ -1,0 +1,7 @@
+check_id: RC-002
+route: RT-002
+outcome: reachable
+checked_on: "2026-09-20"
+note: >-
+  Reached through the shared proxy with the production host header, which is the pitfall the route
+  records.

@@ -1,0 +1,7 @@
+system_id: SYS-FERRY
+name: Ferry
+purpose: >-
+  The partner's shipment service. Results are pushed to it once a delivery is closed out, and the
+  partner's own dashboard reads them from there.
+interface_ref: interface-specs/ferry/results.yaml
+reachable_from: [production]

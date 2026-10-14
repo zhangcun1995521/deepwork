@@ -1,0 +1,15 @@
+route_id: RT-002
+system: SYS-LANTERN
+environment: staging
+status: confirmed
+auth_how: >-
+  The same service account as production, filed under a second name; the secret is still in the
+  host's credential seam.
+via_proxy: true
+network_segment: operations
+pitfalls:
+  - Staging sits behind the shared proxy, and the proxy drops a request whose host header is not
+    the production one. Use the production host name or nothing answers.
+  - Staging is refreshed from production without notice, so a route that worked last week may be
+    pointed at different data today.
+last_confirmed_on: "2026-09-20"

@@ -20,7 +20,9 @@ import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import { loadGraph, type OntologyGraph } from './engine/graph.ts'
+import { createGovernanceRegistry } from './govern/access.ts'
 import type { AuditEntry } from './govern/audit.ts'
+import { writeGuard, type GuardDecision } from './govern/guard.ts'
 import type { RoleRule } from './govern/permission.ts'
 import { deriveActionTools } from './tools/actions.ts'
 import type { DerivedToolSpec } from './tools/derive.ts'
@@ -55,7 +57,7 @@ function surfaceOf(domain: string, roles: readonly RoleRule[], t: TestContext) {
   // Actions are derived apart from the write tool, and a test that wants one has to ask for it
   // here — an action is a shell over the same write path, so it needs the same audit sink.
   const actions = deriveActionTools(graph, { roles, audit })
-  return { graph, entries, ...writes, tools: [...writes.tools, ...actions.tools] }
+  return { graph, root, entries, ...writes, tools: [...writes.tools, ...actions.tools] }
 }
 
 /** {@link surfaceOf} for the lessons example, which most of this file is about. */
@@ -587,4 +589,189 @@ test('which practices govern a deliverable is a query in both directions', (t) =
   // an unagreed practice out of an answer about what the team has agreed: a traversal walks the
   // graph, and the state filter a read would apply is not something a walk gets for free.
   assert.deepEqual(ids(back), ['PRA-001'])
+})
+
+// ── the enterprise outside the deployment ───────────────────────────────────────
+//
+// `outside-systems` is where the world this deployment does not own is written down: the systems
+// outside it, the routes that reach them, and the record that somebody walked one. Three claims
+// are pinned here, and they are the three the example's README makes — a system outside the
+// deployment is an ordinary object type, a route nobody has walked does not read as established,
+// and who may reach out is a grant the domain declares rather than a habit the agent keeps.
+
+const ENGINEER: RoleRule = { prefix: 'engineer-', role: 'engineer' }
+
+const outside = (roles: readonly RoleRule[], t: TestContext) => surfaceOf('outside-systems', roles, t)
+
+test('a system outside the deployment is an object type like any other', (t) => {
+  const { graph } = outside([], t)
+  const tools = deriveTools(graph).tools
+
+  // The read surface is the one every domain gets, and the type is in the same argument enum as
+  // every other type. Nothing in the engine has a branch that knows this one is "external", which
+  // is the whole reason a domain can describe the enterprise without the engine learning it.
+  assert.deepEqual(
+    tools.map((spec) => spec.name),
+    ['ontology_get', 'ontology_find', 'ontology_links', 'ontology_query'],
+  )
+  const find = tool(tools, 'ontology_find')
+  assert.ok(find.parameters.properties?.type?.enum?.includes('OutsideSystem'))
+
+  const result = run(find, { type: 'OutsideSystem' }, 'anonymous')
+  assert.deepEqual(ids(result).sort(), ['SYS-FERRY', 'SYS-LANTERN'])
+  assert.equal(result.excludedByState, undefined, 'nothing filters an ordinary type')
+
+  const got = run(
+    tool(tools, 'ontology_get'),
+    { type: 'OutsideSystem', id: 'SYS-LANTERN' },
+    'anonymous',
+  )
+  assert.deepEqual(ids(got), ['SYS-LANTERN'])
+
+  // It declares no lifecycle, so there is no state to ask for — refused the way any other type
+  // that declares none is refused, rather than answered with a state the engine invented.
+  assert.equal(graph.schema.objectTypes.get('OutsideSystem')?.lifecycle, undefined)
+  assert.throws(
+    () => run(find, { type: 'OutsideSystem', state: 'confirmed' }, 'anonymous'),
+    /declares no lifecycle/,
+  )
+})
+
+test('a route nobody has walked is a candidate, and the read says how many it left out', (t) => {
+  const { graph } = outside([], t)
+  const tools = deriveTools(graph).tools
+  const find = tool(tools, 'ontology_find')
+
+  // RT-003 reaches the partner's service and is documented in as much detail as the two confirmed
+  // routes: authentication, proxy, segment, three pitfalls and a date. `default_state: confirmed`
+  // is why it is not in the answer, and the count is reported rather than the result being quietly
+  // shorter.
+  const result = run(find, { type: 'AccessRoute' }, 'anonymous')
+  assert.deepEqual(ids(result).sort(), ['RT-001', 'RT-002'])
+  assert.equal(result.excludedByState, 1)
+  assert.match(find.render({}, result), /1 more entity is in another state/)
+
+  // The default is a default and not a wall: asking for the state gets it, fields and all.
+  const named = run(find, { type: 'AccessRoute', state: 'candidate' }, 'anonymous')
+  assert.deepEqual(ids(named), ['RT-003'])
+
+  // And a traversal does not inherit that filter. `where` in the declaration is what keeps a
+  // candidate out of an answer about which routes reach a system — the same trap
+  // `practices_governing` avoids in `agreed-practice`, with the same fix.
+  const query = tool(tools, 'ontology_query')
+  assert.deepEqual(
+    ids(run(query, { mode: 'routes_reaching', system_id: 'SYS-FERRY' }, 'anonymous')),
+    [],
+  )
+  assert.deepEqual(
+    ids(run(query, { mode: 'routes_reaching', system_id: 'SYS-LANTERN' }, 'anonymous')).sort(),
+    ['RT-001', 'RT-002'],
+  )
+})
+
+test('reaching an outside system is a grant the domain declares, not a habit', (t) => {
+  const { graph, root } = outside([ENGINEER, CURATOR], t)
+
+  // Wired the way the plugin wires it: the domain's own grants, and a tool that declares what it
+  // touches. `reach_system` is a connector's tool — nothing in this repository declares it, which
+  // is exactly why the grant has to be in the domain.
+  const registry = createGovernanceRegistry()
+  registry.setGrants(graph.schema.toolGrants ?? new Map())
+  registry.declareTool('reach_system', { executes: ['client'] })
+
+  const decisions: GuardDecision[] = []
+  const policy = writeGuard({
+    cwd: root,
+    ontologyRoot: root,
+    roles: [ENGINEER, CURATOR],
+    objectTypes: graph.schema.objectTypes.values(),
+    govern: (name) => registry.govern(name),
+    onDecision: (decision) => decisions.push(decision),
+  })
+  const reach = (agentId: string) =>
+    policy({
+      name: 'reach_system',
+      // A path outside the domain entirely, which is the ordinary case for a tool like this: there
+      // is no directory rule to fall back on, so the grant is the whole of its authority.
+      arguments: { route_id: 'RT-001', client: '../connectors/reach' },
+      agentId,
+    })
+
+  assert.equal(reach('engineer-session-1'), undefined, 'the granted role gets through')
+  assert.equal(decisions.at(-1)?.reason, undefined)
+
+  assert.match(reach('curator-session-1') ?? '', /not in this domain's tool_grants/)
+  assert.equal(decisions.at(-1)?.reason, 'tool-not-granted-to-role')
+  // The refusal names who may, not only who may not, so a caller can tell a missing grant from one
+  // made for somebody else.
+  assert.match(decisions.at(-1)?.detail ?? '', /engineer/)
+
+  // A tool that reaches out and finds no entry is refused rather than licensed — "nobody said who
+  // may call this" is the worse answer to give a tool that touches something outside the domain.
+  registry.declareTool('push_result', { executes: ['client'] })
+  assert.match(
+    policy({
+      name: 'push_result',
+      arguments: { client: '../connectors/push' },
+      agentId: 'engineer-session-1',
+    }) ?? '',
+    /no tool_grants entry/,
+  )
+  assert.equal(decisions.at(-1)?.reason, 'no-grant-declared')
+
+  // And with no roles configured there is no caller identity to reason about at all: the
+  // deployment is read-only, and the refusal says so instead of guessing a role.
+  const bare: GuardDecision[] = []
+  const unconfigured = writeGuard({
+    cwd: root,
+    ontologyRoot: root,
+    roles: [],
+    objectTypes: graph.schema.objectTypes.values(),
+    govern: (name) => registry.govern(name),
+    onDecision: (decision) => bare.push(decision),
+  })
+  assert.match(
+    unconfigured({ name: 'reach_system', arguments: { client: '../connectors/reach' } }) ?? '',
+    /read-only/,
+  )
+  assert.equal(bare.at(-1)?.reason, 'no-roles-configured')
+})
+
+test('a route becomes established only on a check from somebody who did not write it', (t) => {
+  const { graph, entries, tools } = outside([ENGINEER, CURATOR, VERIFIER], t)
+  const write = tool(tools, 'ontology_write')
+  const confirm = (agentId: string) =>
+    run(write, { type: 'AccessRoute', id: 'RT-003', data: { status: 'confirmed' } }, agentId)
+
+  // The engineer who wired the route and wrote its pitfalls cannot make the move: `confirm` names
+  // the curator, and being able to describe a route is not being able to settle it.
+  assert.throws(() => confirm('engineer-session-1'), /transition-not-permitted/)
+  assert.equal(entries.at(-1)?.reason, 'transition-not-permitted')
+
+  // The curator may make it, and cannot make it on the check that exists: RC-003 says
+  // `unreachable`, which is the honest record of a route somebody tried and could not walk.
+  assert.throws(() => confirm('curator-session-1'), /review-required/)
+  assert.equal(entries.at(-1)?.reason, 'review-required')
+  assert.match(entries.at(-1)?.detail ?? '', /outcome is "reachable"/)
+  assert.equal(graph.byId.get('AccessRoute:RT-003')?.data.status, 'candidate')
+
+  // A check from a role that wrote neither the route nor the move. Provenance is the platform's
+  // record of that, and it is what the independence rule reads.
+  run(
+    write,
+    {
+      type: 'RouteCheck',
+      id: 'RC-900',
+      data: { route: 'RT-003', outcome: 'reachable', checked_on: '2026-10-14' },
+    },
+    'verifier-session-1',
+  )
+
+  confirm('curator-session-1')
+  assert.equal(graph.byId.get('AccessRoute:RT-003')?.data.status, 'confirmed')
+
+  // And the read the deployment gets changes with it, from the same declaration as everything else.
+  const result = run(tool(deriveTools(graph).tools, 'ontology_find'), { type: 'AccessRoute' }, 'anonymous')
+  assert.deepEqual(ids(result).sort(), ['RT-001', 'RT-002', 'RT-003'])
+  assert.equal(result.excludedByState, undefined)
 })

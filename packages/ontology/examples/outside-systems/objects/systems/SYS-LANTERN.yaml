@@ -1,0 +1,7 @@
+system_id: SYS-LANTERN
+name: Lantern
+purpose: >-
+  The field team's visit-planning service. This deployment reads the visits planned for a site so
+  a briefing can say what is happening there this week; nothing is ever written back.
+interface_ref: interface-specs/lantern/visits.yaml
+reachable_from: [production, staging]

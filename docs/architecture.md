@@ -6,11 +6,14 @@ This is what DeepWork is made of, and the route a write takes through it. It is 
 beside the code: every claim below is a declaration, a branch or a comment that exists in this
 repository, named so that it can be found.
 
-`docs/architecture.svg` is the hand-drawn picture of the same journey and stays as it is. It was
-drawn before the prompt-injection channel existed, before products and deliverables became objects,
-before governance moved from a hard-coded list of tool names to declarations, and before the
-capability layer — so it is a picture of the route as it was. This document does not reproduce any
-of the pictures beside it, and nothing below depends on them.
+There is no drawn picture of the layers beside this document, and that is a decision with a
+history: one was retired rather than maintained. It had been drawn before the prompt-injection
+channel existed, before products and deliverables became objects, before governance moved from a
+hard-coded list of tool names to declarations, and before the capability layer — so each of those
+changes turned it into a picture of a route the code no longer took, and nothing in the repository
+could say that it had. The other picture in `docs/`, `derivation.svg`, is different in kind: it is a
+real `npm run demo` rendered to an image by `packages/ontology/scripts/render-demo-svg.ts`, so it is
+regenerated rather than redrawn. Nothing below depends on either of them.
 
 ## The three layers
 
@@ -521,6 +524,7 @@ branch. None of them is smoothed over above.
 | `packages/ontology/src/tools/actions.ts` | declared actions, derived as thin shells over that path |
 | `packages/ontology/src/tools/register.ts` | the bridge to the host's registry, and the no-dependency rule |
 | `packages/ontology/examples/agreed-practice` | the domain that exercises the situation, and the pure state move |
+| `packages/ontology/examples/outside-systems` | the domain that holds the systems outside the deployment, and the only shipped one to declare `tool_grants` |
 | `packages/test-runner`, `packages/lsp`, `packages/session-query` | three capabilities: two declare what they touch, and one is a read that declares nothing |
 | `packages/role` | a mode's role and the prompt it works under — not a capability, and it registers no tool |
 | `packages/ontology/cordis.patch.yml` | one bundle's composition layer; every package here carries one beside it |

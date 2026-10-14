@@ -1,0 +1,172 @@
+version: "1.0"
+
+# The enterprise this deployment does not contain: the systems outside it, the routes that reach
+# them, and the record that somebody actually went and reached one.
+#
+# A domain that can only describe its own insides stops at the edge of the deployment, and the
+# enterprise is mostly on the other side of that edge. What an integrator has to write down about
+# it is not code: what a system is for, where its interface is written, which environments can see
+# it at all, how the call authenticates, which segment it travels over, and which of the known
+# ways it has failed before. That is what the three types below carry.
+#
+# Two things are worth reading this file for.
+#
+# The first is what `OutsideSystem` is *not*. There is no `kind: external`, no connector registry,
+# no branch anywhere: it is one object type among others, deriving the same read tools, appearing
+# in the same `type` enum, and filtered by nothing because it declares no lifecycle. An engine
+# with a special case for "external" would be an engine that knows what an enterprise is; this one
+# only knows what a schema says, which is why this file is the whole cost of the example.
+#
+# The second is where reaching one is decided. `tool_grants` at the bottom names a tool that may
+# reach an outside system and the role that may call it — and the tool itself is deliberately not
+# in this repository. Connecting is a capability's work: the host's shell, an MCP server, a
+# connector somebody else wrote. The grant is where this deployment says who is allowed, and
+# nothing in this directory opens a socket, holds a credential, or reads a response.
+#
+# Everything here is synthetic: invented systems, invented interfaces, invented incidents.
+
+object_types:
+  # An outside system, as an ordinary object type. The fields are the five things a reader needs
+  # before touching it: what it is, what it is for, where its interface is written down, which
+  # environments can see it, and nothing else — how a call gets through belongs to the route,
+  # because the same system is reached differently from different deployments.
+  OutsideSystem:
+    primary_key: system_id
+    required_fields: [system_id, name, purpose, interface_ref]
+    file_location: objects/systems/SYS-*.yaml
+    # Whoever keeps the register of systems keeps it. The engineer, who writes the routes below,
+    # is deliberately absent: wiring a route to a system is not deciding that the system exists.
+    written_by: [curator]
+    fields:
+      system_id: { type: string, required: true }
+      name: { type: string, required: true }
+      purpose: { type: string, required: true }
+      # A pointer, not a copy. Where the interface is written down is a reference to whatever
+      # already holds it — a specification repository, a schema document, the vendor's own page —
+      # because a second copy of an interface is a second interface, and the one this domain holds
+      # would be the one nobody updates.
+      interface_ref: { type: string, required: true }
+      # Which environments can see this system at all. A fact about the system; how one deployment
+      # reaches it from there is a fact about the route, and the two are declared apart on purpose.
+      reachable_from: { type: array, items: string }
+
+  # How this deployment gets to that system: the authentication, the path, the things that went
+  # wrong on it, and when it was last walked. These are facts about the route, not about code
+  # anywhere — which is exactly why they have to live in the domain. A pitfall that only the last
+  # person to hit it knows is a pitfall the next person pays for again.
+  AccessRoute:
+    primary_key: route_id
+    required_fields: [route_id, system, environment, status, auth_how]
+    file_location: objects/routes/RT-*.yaml
+    # The engineer who wired the route and walked into its pitfalls writes it. The curator is
+    # absent here and present in the transition below: confirming a route is a move, and a role
+    # that may make a move need not be able to rewrite the thing it moves.
+    written_by: [engineer]
+    lifecycle:
+      field: status
+      initial: candidate
+      # Reads return confirmed routes and say how many they left out. A route nobody has walked is
+      # the ordinary case — most routes in a real deployment are candidates — so a type that
+      # returned them as though they were established would make every answer about the outside
+      # world a guess wearing the same clothes as a fact.
+      default_state: confirmed
+      states: [candidate, confirmed]
+      transitions:
+        # A promotion somebody else went and checked. Declared, rather than left out, for one
+        # reason worth stating: a domain with no transition here reports `no-declared-transition`
+        # the first time anybody tries to confirm a route, and that refusal is one nobody can act
+        # on. So this example takes the other of the two honest options and closes the loop.
+        #
+        # What the requirement is worth reading twice. A route cannot certify itself by being well
+        # documented: `auth_how`, `pitfalls` and `last_confirmed_on` can all be filled in on a
+        # candidate and it stays a candidate, because the move needs a `RouteCheck` produced by
+        # somebody other than the one making the move — and a check saying `reachable`.
+        confirm:
+          from: [candidate]
+          to: confirmed
+          by: [curator]
+          requires_review:
+            type: RouteCheck
+            link: route
+            field: outcome
+            pass: reachable
+    fields:
+      route_id: { type: string, required: true }
+      system: { type: ref, to: OutsideSystem, required: true }
+      environment: { type: enum, values: [production, staging], required: true }
+      status: { type: enum, values: [candidate, confirmed], required: true }
+      # How the call authenticates: the mechanism, and which name the material is filed under.
+      # Never the material itself, which lives in the host's credential seam — the same rule as
+      # everywhere else in this project, applied to the one field most likely to be the exception.
+      auth_how: { type: string, required: true }
+      # Whether the call leaves through a proxy. One boolean rather than a paragraph, because this
+      # is the fact that decides whether a working call from a laptop works from the deployment.
+      via_proxy: { type: boolean }
+      # The segment or hop the call travels over when it is not the ordinary path.
+      network_segment: { type: string }
+      # What went wrong here and what it took to get through. An array rather than one paragraph:
+      # each entry is a thing that happened, and the next person who hits one can add to the list
+      # instead of rewriting it.
+      pitfalls: { type: array, items: string }
+      # When this route was last walked end to end. A date on a candidate is an ordinary state —
+      # somebody went through, and the route has not been confirmed yet — and it is deliberately
+      # not what makes the route a fact.
+      last_confirmed_on: { type: string }
+
+  # The record that somebody went and reached the system. An ordinary object: the engine does not
+  # know it is a judgement, and the `requires_review` above names the three fields that carry it.
+  RouteCheck:
+    primary_key: check_id
+    required_fields: [check_id, route, outcome, checked_on]
+    file_location: objects/route-checks/RC-*.yaml
+    # Neither the engineer who wrote the route nor the curator who may confirm it. Whoever walks
+    # the route writes the check, and the mover is somebody else again, because a check has to
+    # survive the question "did the person making the move write it".
+    written_by: [verifier]
+    fields:
+      check_id: { type: string, required: true }
+      route: { type: ref, to: AccessRoute, required: true }
+      # Both directions are recorded, and the failing one is the useful one: a route that was
+      # tried and did not answer is a route somebody should not wire a job to yet.
+      outcome: { type: enum, values: [reachable, unreachable], required: true }
+      checked_on: { type: string, required: true }
+      note: { type: string }
+
+link_types:
+  reaches:
+    from: AccessRoute
+    to: OutsideSystem
+    via: system
+    description: The outside system this route gets to.
+  checked:
+    from: RouteCheck
+    to: AccessRoute
+    via: route
+    description: The route a check was made on.
+
+functions:
+  routes_reaching:
+    description: The confirmed routes that reach a given outside system — who depends on it, and how.
+    use: traverse
+    relation: reaches
+    direction: incoming
+    by: system_id
+    # A traversal walks the graph, and the state filter a read applies for free is not part of a
+    # walk. Without this, asking which routes reach a system would answer with candidates — the
+    # same mistake `practices_governing` in `agreed-practice` is written to avoid.
+    where: { status: confirmed }
+
+tool_grants:
+  # The one declaration here that says something about a tool which is not here.
+  #
+  # A tool that touches something outside this domain has no directory in it to be judged against,
+  # so the grant is the whole of its authority — and a tool that declares itself through the
+  # governance channel with no grant entry is refused outright, because "nobody said who may call
+  # this" is the worse answer to give a tool that reaches out.
+  #
+  # `engineer` wires the routes and is the role that acts on one. `curator` keeps the register and
+  # decides what is confirmed, and is deliberately not granted: deciding a route is not the same
+  # right as using it, which is the whole reason the two are declared in different places.
+  # Nothing in this repository declares `reach_system`. It is what a connector would declare, and
+  # the grant is here waiting for it — this directory's README and its test show it enforced.
+  reach_system: [engineer]

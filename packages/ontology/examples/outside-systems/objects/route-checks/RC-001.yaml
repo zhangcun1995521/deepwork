@@ -1,0 +1,7 @@
+check_id: RC-001
+route: RT-001
+outcome: reachable
+checked_on: "2026-09-18"
+note: >-
+  Read the visits planned for one site for the following week and compared them against the
+  service's own view of the same site. Same list.

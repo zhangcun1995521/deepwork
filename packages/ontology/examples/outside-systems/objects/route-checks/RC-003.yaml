@@ -1,0 +1,8 @@
+check_id: RC-003
+route: RT-003
+outcome: unreachable
+checked_on: "2026-10-01"
+note: >-
+  Attempted through the proxy and the connection was reset before the partner's gateway answered.
+  Reaching it directly from the operations segment was refused by the network, so the route is
+  documented and not yet walked.

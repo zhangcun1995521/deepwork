@@ -43,9 +43,53 @@ Every part of this repository is one step of the same journey: a **world is decl
 Read it top to bottom and this repository is one thing. Read the sections below out of order
 and it is a list of mechanisms.
 
-The same line as a picture — what a write passes through, and what comes out either side:
+The same line as a picture:
 
-![How a write travels through DeepWork](docs/architecture.svg)
+```mermaid
+flowchart TB
+  subgraph assembly["assembly"]
+    prof["a profile: which plugins, which roles, which domain, which mode — changing the deployment changes only this layer"]
+  end
+
+  subgraph data["a domain — data, not code"]
+    schema["schema.yaml — objects · relations · functions · states and transitions · who may write · actions · queries · situation · skill"]
+    inst["the instances beside it"]
+  end
+
+  subgraph dw["DeepWork — a plugin, not a fork"]
+    eng["the engine — reads the domain, builds the graph, derives the edges"]
+    der["derivation — the read tools and query modes, the write tool, declared actions, the lifecycle's requirements"]
+    gov["governance — the guard mounted globally in front of every call, permissions derived from written_by, review checked against provenance, an audit of field names and never field values"]
+    inj["injection — the rules the situation selects, in the prompt and in the catalogue"]
+    cap["a capability — a second plugin, declaring what its tools touch"]
+  end
+
+  subgraph hosted["the host — DeepSeek Harness"]
+    loop["the agent loop · the tool registry · the skill and prompt registries · the session"]
+    own["its own file and shell tools"]
+  end
+
+  prof --> dw
+  schema --> eng
+  inst --> eng
+  eng --> der
+  eng --> gov
+  eng --> inj
+  der -->|"the tool surface an agent is given"| loop
+  inj -->|"the rules block, and the catalogue"| loop
+  gov -->|"judges each call before it runs"| loop
+  cap -->|"declares, so it is judged too"| gov
+  gov -->|"or the host's own tools are the way around it"| own
+  loop -->|"a write that was allowed"| wrote["the instance file, and one structured audit entry"]
+  gov --> refused["a refusal, and one structured audit entry naming the rule that refused"]
+```
+
+Two places in that picture answer questions people expect one place to answer, so they are worth
+naming. The guard is the door: before any tool runs, may this call touch this path at all. The write
+path is the desk: may this content be written, by this caller, in this state. A capability's own
+tools stop at the door; this plugin's write tool passes the door unjudged and is settled at the desk,
+because nothing declares `ontology_write` and it is not in the built-in table — so its authority
+lives inside the tool rather than in the mounted guard.
 
 [docs/architecture.md](docs/architecture.md) is the same route written out — the layers, one write end to end, and the limits named; and the [same document in Chinese](docs/architecture.zh.md) is there for a reader who works in Chinese.
 
@@ -187,13 +231,13 @@ tools    3 read, 1 write
 objects
          Deliverable  key=deliverable_id instances=1   may write: engineer
                       states: draft → signed_off
-                      sign_off: draft → signed_off   by: engineer   requires an independent verdict
+                      sign_off: draft → signed_off   by: engineer   needs a Signoff (decision=signed)
          Signoff      key=signoff_id     instances=1   may write: reviewer
 ```
 
 That second run is a governance model in fifteen lines, and not one of them was written by
 hand: it is the domain, read back. The enforcement behind those lines is described under
-[Governance](#governance) and checked by 340 tests.
+[Governance](#governance) and checked by 344 tests.
 
 ## What it looks like when an agent uses it
 
@@ -221,11 +265,14 @@ Working and demonstrated, not finished.
 | Declared review — a move that needs an independent verdict | ✅ enforced against provenance the platform recorded; a promotion went through on another session's verdict and was refused without one |
 | Declared value sets — a field's `values` as a closed set, not a hint | ✅ a value outside it is refused with `value-not-declared`, through the generic write tool and through a declared action |
 | Declared-domain validation — an exit code a pipeline can read | ✅ a sound domain passes, a malformed one fails naming the declaration that was dropped |
-| Example domain — the demo scenario | ✅ end to end |
+| Example domains — five of them, one mechanism each | ✅ end to end; the fifth describes the systems outside the deployment, and is the first to declare a `tool_grants` entry |
+| Capability layer — a second plugin that adds an ability | ✅ three packages: a project's tests, a language server, and the lineage around a session; two declare what they touch, and the third is a read that declares nothing |
+| Mode role — who a mode's agents are, and the prompt they work under | ✅ its own package; it registers no tool, and the role it publishes is what selects the rules the mode must follow |
+| Architecture — the route written down | ✅ `docs/architecture.md`, with each limit named beside the file that states it |
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-340 tests in total.
+344 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
@@ -246,6 +293,11 @@ does. Each of these was considered and declined, not overlooked.
 - **Not a fork**, and not a wrapper around one: a plugin, tracking upstream releases.
 - **Not credential storage.** A domain may point at a secret; the value stays in the host's
   credential seam and never enters the domain, the audit trail, or anything a model reads.
+- **Not an integration runtime.** A domain declares the systems outside it — what each one is for,
+  who depends on it, how this deployment reaches it, which pitfalls that path is known for — and
+  which tool may touch one. Making the call is a tool's work: the host's shell, an MCP server, a
+  connector somebody else wrote. Nothing here opens a connection or reads a response, and a route
+  is declared the way a secret is: the domain keeps the pointer and the policy, never the value.
 - **Not the working record.** The decision log, the verified facts and the environment pitfalls
   are kept locally and are not published. It is written as notes, in the language of the work,
   which means it keeps collecting names and paths that do not belong in public — sanitising it
@@ -257,9 +309,9 @@ And the honest half — what a reader will find missing:
 | Missing | Where it stands |
 |---|---|
 | One artefact showing a task start to finish — a recording, not a description | sessions are recorded as documents and refusals as audit entries, but there is no single thing a stranger can watch |
-| `deepwork init` — a domain to copy and rename | the three examples are the starter material |
+| `deepwork init` — a domain to copy and rename | the five examples are the starter material |
 | Validation on several real domains | one production domain has been through it — 17 object types, 269 instances, 214 relations — and that run is what put the two-level diagnostics in. One is not several |
-| External system access | declared as a pointer, nothing more |
+| A connector to an outside system | `examples/outside-systems` declares the systems, the routes and who may call a tool that reaches one; nothing in this repository makes the call, which is the boundary above rather than a gap |
 
 ## Quick start
 
@@ -296,8 +348,9 @@ so any real prefix still beats it and a mixed deployment can name its agents ind
 The panel lives inside DSH's own interface rather than beside it: one process, one origin,
 no second server to run and no RPC layer. Install the plugin into a profile, open DSH's web
 UI, and the **Ontology** row in the sidebar shows what the engine derived from the domain —
-the tool definitions with the JSON Schema of every argument, the object types with who may
-write them, and the relations with the field each one reads.
+the rules a type declares and who may make each move, the declared actions, the tool definitions
+with the JSON Schema of every argument, the object types with who may write them, and the
+relations with the field each one reads.
 
 Put a role map in the `roles` box and the write tool appears in the listing; leave it empty
 and the page explains why it does not. That is the governance model answering a question out
@@ -358,13 +411,14 @@ domain was put through. `packages/ontology/tests/fixtures/ahead-of-its-data` now
 | `packages/ontology/examples/lessons` | the experience loop as a domain: a lesson arrives as a `candidate`, reads return only what somebody else upheld, and counting applications is a grant apart from writing one |
 | `packages/ontology/examples/engagement` | a staged delivery: four phases, and the customer's signature scoped to the stage it opens, so the road opens one gate at a time |
 | `packages/ontology/examples/agreed-practice` | the injection as a domain: a practice is a candidate until somebody else agrees to it, and naming a work item selects which agreed practices reach the prompt — the one example that exercises `situation` |
+| `packages/ontology/examples/outside-systems` | the enterprise outside the deployment: the systems it must talk to, the routes that reach them with the pitfalls on each, and who may call a tool that reaches one — the one example that exercises `tool_grants` |
 | `packages/test-runner` | a capability: run a project's tests and read what the run said (see its README) |
 | `packages/session-query` | a capability the host does not ship yet: the lineage around one session, so an agent can pick up what another started |
 | `packages/lsp` | the same kind of stand-in: ask a language server where something is defined, instead of guessing from a text match |
 | `packages/role` | not a capability: the role a mode acts as and the prompt file it works under, registering nothing and publishing the role for the ontology to select rules by |
 | `packages/probe` | the smallest possible plugin, kept as the smoke test for the plugin route |
 | `tools/fde` | the FDE toolkit: qualify a use case before anything gets built (Python, runs standalone) |
-| `docs` | two recorded agent sessions, the derivation picture, and the architecture picture |
+| `docs` | two recorded agent sessions, the architecture route written out in English and Chinese, and the derivation picture |
 
 ## Governance — steps ③ to ⑥, in detail
 
@@ -397,7 +451,8 @@ may call a tool. Only the domain knows who is allowed. It matters most for `exec
 running code has no directory in the domain to be judged against — the target of a test run is a
 project, not an object — so the grant is the whole of its authority, and a tool that runs code
 with no grant is **refused** rather than licensed. "Nobody said who may call this" is the worse
-answer to give an execution tool.
+answer to give an execution tool. `examples/outside-systems` is the shipped domain that declares
+one, for the tool that reaches a system this deployment does not own.
 
 **A capability carries its own manual, and it arrives the same way a rule does.** A tool
 description says what a tool does; it has no room for the order to do things in, or for what a
@@ -535,7 +590,7 @@ halves — because a rule is about *a thing* and *when*:
 
 ```bash
 DEEPWORK_ONTOLOGY_ACTIVE="CASE-1042"    # what you are working on — the stage follows from it
-DEEPWORK_ONTOLOGY_SITUATION="role:analyst"   # who you are; "at what" is no longer typed by hand
+DEEPWORK_ROLE="analyst"                 # who you are — the mode states it, and the situation carries it as a tag
 ```
 
 The first half is a declaration too, not a convention. The domain names the type that carries

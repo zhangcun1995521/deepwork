@@ -1,0 +1,15 @@
+route_id: RT-001
+system: SYS-LANTERN
+environment: production
+status: confirmed
+auth_how: >-
+  A service account; the secret stays in the host's credential seam and this domain records only
+  the name it is filed under.
+via_proxy: false
+network_segment: operations
+pitfalls:
+  - The first call after either side is redeployed is slow enough to look like a timeout. Retry
+    once before reporting a failure, or every deployment reads as an outage.
+  - Visit times come back in the service's own timezone, not the deployment's.
+  - Visits cancelled on the day are returned with no end time, which is not an error.
+last_confirmed_on: "2026-09-18"
