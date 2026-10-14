@@ -19,7 +19,9 @@ import {
   type AuditEntry,
 } from './govern/audit.ts'
 import { writeGuard } from './govern/guard.ts'
+import { GOVERNANCE_SERVICE, createGovernanceRegistry } from './govern/access.ts'
 import type { RoleRule } from './govern/permission.ts'
+import { parseSituation, renderSection, resolveActive, selectRules } from './inject.ts'
 import { experienceSkills, type ExperienceSkill } from './skills.ts'
 import { registerOntologyTools, type ToolRegistry } from './tools/register.ts'
 import { domainSnapshot } from './web.ts'
@@ -51,6 +53,36 @@ export interface Config {
   roles?: RoleRule[]
   /** Where write attempts are recorded. Defaults to `<ontologyRoot>/.audit.jsonl`. */
   auditLog?: string
+  /**
+   * The situation this deployment is in, as comma-separated `key:value` tags — `stage:review,
+   * artifact:handover`.
+   *
+   * It decides which of the domain's vouched-for rules are written into the agent's prompt, which
+   * is what makes the answer a fact about the world rather than the model's choice. Empty is not
+   * "inject nothing": a deployment that has not said where it is gets every rule, because the
+   * rules are requirements and being unselective is the safe direction to be wrong in.
+   */
+  situation?: string
+  /**
+   * What this session is working on: an object id (`CASE-1042`) or a product id
+   * (`DLV-RELEASE_NOTES`).
+   *
+   * This is the half of the situation a person can see and copy. The tag half above is a
+   * vocabulary they have to remember; naming the thing they are working on is not, and the tags
+   * follow from it. Naming a product directly is what covers the products with no object behind
+   * them — a pytest script never enters the ontology, since the domain stores a pointer rather
+   * than a copy.
+   */
+  active?: string
+  /**
+   * Ceiling on the injected rules, in characters.
+   *
+   * A backstop against a domain outgrowing its context, not a target: below it nothing changes, and
+   * above it the least specific rules are the ones held back — still loadable by name, just not
+   * impossible to miss. Undefined means the composition said nothing, and the section is written
+   * whole.
+   */
+  budget?: number
 }
 
 /** The slice of the runtime context this plugin uses. */
@@ -69,6 +101,19 @@ export interface OntologyContext {
    * be tested without one.
    */
   inject?<Service>(names: readonly string[], callback: (scoped: Service) => void): void
+  /**
+   * Publish a value under a name other plugins can look up.
+   *
+   * The other half of {@link inject}, and the reason capabilities can declare what their tools
+   * touch without either package importing the other: the name is stated by both sides and the
+   * caller is whoever injects it. Optional for the same reason — a host without it still loads,
+   * and only the declaration channel is missing, which this plugin reports.
+   *
+   * @param name - Service name to publish under.
+   * @param value - The service value.
+   * @returns the exact disposer that withdraws it.
+   */
+  provide?(name: string, value: unknown): () => void
 }
 
 /** The skill registry a profile provides, when it has one. */
@@ -78,6 +123,27 @@ export interface SkillSurface {
     register(skill: ExperienceSkill): () => void
   }
   /** Tie a contribution to this plugin's lifetime, the way the web route is tied. */
+  effect?(callback: () => () => void, label?: string): void
+}
+
+/** The prompt registry a profile provides, when it has one. */
+export interface SystemPromptSurface {
+  systemPrompt: {
+    /**
+     * Register one ordered section. A duplicate name in one layer throws, so the name is the
+     * plugin's own and namespaced; the host's own sections are named by the host.
+     */
+    section(section: {
+      name: string
+      order: number
+      text: string
+      /** False keeps the text literal, which matters when it comes from domain data. */
+      interpolate?: boolean
+    }): () => void
+    /** The centrally allocated position for a named section. */
+    getSectionOrder(name: string): number
+  }
+  /** Tie the registration to this plugin's lifetime, the way the web route is tied. */
   effect?(callback: () => () => void, label?: string): void
 }
 
@@ -119,6 +185,12 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
   // Throws on an unreadable schema; see the doc comment above.
   const graph = loadGraph(ontologyRoot)
 
+  // The declaration channel, published before the guard is mounted so a capability that loads
+  // after this one can declare its tools and be judged on the same boot.
+  const registry = createGovernanceRegistry()
+  registry.setGrants(graph.schema.toolGrants ?? new Map())
+  const unpublished = ctx.provide?.(GOVERNANCE_SERVICE, registry) === undefined
+
   // Writes are opt-in, and the gate is the role map rather than a separate flag: a
   // deployment that has not said who may write gets no write tool.
   const roles = config.roles ?? []
@@ -156,6 +228,7 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
     ontologyRoot: resolve(ontologyRoot),
     roles,
     objectTypes: graph.schema.objectTypes.values(),
+    govern: (tool) => registry.govern(tool),
     // The trail. Mounted even with writes disabled, because the refusals worth reading
     // are exactly the ones that happen when nobody was allowed to write.
     onDecision: (decision) =>
@@ -201,6 +274,31 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
     )
   }
 
+  if (unpublished) {
+    warn(
+      ctx,
+      'the runtime exposes no way to publish a service, so capabilities cannot declare what ' +
+        'their tools touch and only the tools listed in this plugin are governed',
+    )
+  } else {
+    // What the guard can judge, said at boot rather than inferred later. A capability that loads
+    // after this line still appears, because the registry is read per call — but only if it
+    // declared anything, and a tool nobody declared is the one gap this cannot see.
+    const declared = registry.declared()
+    const grants = graph.schema.toolGrants
+    if (ctx.logger?.info !== undefined) {
+      ctx.logger.info(
+        `${name}: governance published as "${GOVERNANCE_SERVICE}"; ${declared.length} tool(s) ` +
+          `declared so far${declared.length === 0 ? '' : ` (${declared.join(', ')})`}; ` +
+          `${
+            grants === undefined
+              ? 'the domain grants no tool'
+              : `${grants.size} tool(s) granted (${[...grants.keys()].join(', ')})`
+          }`,
+      )
+    }
+  }
+
   // Loading warnings first: a caller reading a log top-down should meet the domain's
   // problems before the derivation's, because a broken domain explains a lot of them.
   for (const message of [...graph.warnings, ...warnings]) warn(ctx, message)
@@ -241,6 +339,64 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
           }
         },
         'deepwork-ontology: experience skills',
+      )
+    })
+  }
+
+  // The same vouched-for experience, this time written into the prompt rather than offered to the
+  // model.
+  //
+  // This is the half the catalog cannot do, and the reason it is worth having both. A catalog is
+  // a list of names the model has to remember to consult, and know-how can be trusted to that —
+  // it reaches for a procedure when it wants one. A *rule* cannot: one the model may load is one
+  // it may miss, and the rules here are the ones a person signed off on.
+  //
+  // Registered the same lazy, optional way as the web route and the catalog, because a profile
+  // may have no prompt registry and nothing above may depend on one existing.
+  //
+  // The text is a plain string, not a provider, and that is a decision rather than a shortcut: it
+  // is built once from the graph already in hand, so what is injected cannot drift from what the
+  // read tools return, and a domain file that becomes unreadable mid-session cannot fail prompt
+  // assembly. The cost is that a rule promoted during this process waits for the next boot, which
+  // is the limit the catalog has too.
+  const deliverablesResolved = resolveActive(graph, config.active ?? '')
+  if (deliverablesResolved.note !== undefined) {
+    warn(ctx, `the session named "${config.active ?? ''}" as what it is working on, but ${deliverablesResolved.note}`)
+  }
+
+  const selection = selectRules(
+    graph,
+    { deliverables: deliverablesResolved.deliverables, tags: parseSituation(config.situation ?? '') },
+    config.budget === undefined ? {} : { budget: config.budget },
+  )
+  for (const tag of selection.unknown) {
+    warn(
+      ctx,
+      `the declared situation tag "${tag}" matches no rule in this domain; it is probably a ` +
+        `spelling mistake, and a tag that matches nothing selects nothing`,
+    )
+  }
+  // Registered whenever the domain vouches for anything — including when the situation selected
+  // none of it. That case is the one a reader most needs told: an empty selection and a mistyped
+  // tag are indistinguishable from inside the rule set, and only one of them is a mistake. A
+  // plugin that stayed silent when nothing matched would turn the loudest failure into the
+  // quietest.
+  if (selection.total > 0) {
+    ctx.inject?.(['systemPrompt'], (prompt: SystemPromptSurface) => {
+      prompt.effect?.(
+        () =>
+          prompt.systemPrompt.section({
+            name: 'deepwork:experience',
+            // Beside the persona and ahead of every tool description: these are requirements on
+            // the work, and a reader meets them where it meets who it is.
+            order: prompt.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 1,
+            // Domain data must not be able to fail prompt assembly, and the registry's
+            // `{{variable}}` references are strict — an undefined one throws. A rule that happens
+            // to contain a brace pair would otherwise take every turn down with it.
+            interpolate: false,
+            text: renderSection(selection),
+          }),
+        'deepwork-ontology: experience injection',
       )
     })
   }

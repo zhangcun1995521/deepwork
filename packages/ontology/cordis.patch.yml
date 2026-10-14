@@ -27,3 +27,21 @@
         # Write attempts are recorded here, refusals included. Defaults to
         # `.audit.jsonl` beside the domain.
         auditLog: !!js process.env.DEEPWORK_ONTOLOGY_AUDIT || null
+        # The situation this deployment is in, as comma-separated `key:value` tags. It selects
+        # which of the domain's vouched-for rules are written into the agent's prompt, so what the
+        # agent must follow is answered by the world rather than by the model. Comma-separated and
+        # not JSON: it is the grammar the domain already tags its rules with, and it needs no
+        # quoting to survive a shell. Unset means every vouched-for rule is injected, which is the
+        # safe direction for a requirement to be wrong in.
+        situation: !!js process.env.DEEPWORK_ONTOLOGY_SITUATION ?? ''
+        # What this session is working on: an object id (`CASE-1042`) or a product id
+        # (`DLV-RELEASE_NOTES`). This is the half a person can see and copy — the tags above are a
+        # vocabulary they have to remember, and naming the thing is not.
+        active: !!js process.env.DEEPWORK_ONTOLOGY_ACTIVE ?? ''
+        # Ceiling on the injected rules, in characters. A backstop, not a target: a domain grows
+        # and a prompt does not, so the day they cross this has to already be in place. At 32000
+        # roughly 230 rules fit, and the domain this was built against vouches for 71. Note that
+        # `0` is taken literally and means "inject no rules", so it is not the way to say "no
+        # ceiling" — a large number is. Quoted for the same reason `roles` is: a bare scalar would
+        # let YAML read the ` : ` in the ternary as a mapping separator.
+        budget: !!js 'process.env.DEEPWORK_ONTOLOGY_BUDGET ? Number(process.env.DEEPWORK_ONTOLOGY_BUDGET) : 32000'

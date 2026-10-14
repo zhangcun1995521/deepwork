@@ -1,6 +1,6 @@
 {
   "name": "@zhangcun123/test-runner",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "Run a project's tests and read what the run said — a capability plugin for DeepWork.",
   "license": "MIT",
   "type": "module",

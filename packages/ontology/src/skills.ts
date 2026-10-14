@@ -20,6 +20,7 @@
  */
 
 import type { OntologyGraph, OntologyObject } from './engine/graph.ts'
+import type { SkillDecl } from './engine/schema.ts'
 
 /** A contribution in the shape the host's skill registry accepts. */
 export interface ExperienceSkill {
@@ -63,23 +64,59 @@ export function toSkillName(typeName: string, id: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
-/** A declared field's value as text, when it holds one. */
-function text(object: OntologyObject, field: string): string | undefined {
+/**
+ * A declared field's value as text, when it holds one.
+ *
+ * Exported because two surfaces read the same declaration to render the same instance: the skill
+ * catalog and the injected listing. A second copy of "how a declared field becomes text" is how
+ * the two would come to disagree about a field the schema says holds something.
+ */
+export function text(object: OntologyObject, field: string): string | undefined {
   const value = object.data[field]
   if (typeof value === 'string' && value.trim().length > 0) return value.trim()
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  // A declared field may hold a list, and the field a domain is most likely to name here is one:
+  // the routing dimension is naturally a set of tags. Rendered rather than dropped, because a
+  // routing line the schema declares and no skill ever carries is a declaration that lies — the
+  // failure would be invisible, which is the one thing this module's notes exist to prevent.
+  // Rendered and not interpreted: a caller that needs the tags as tags reads the field itself.
+  if (Array.isArray(value)) {
+    const parts = value
+      .filter((item) => typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean')
+      .map((item) => String(item).trim())
+      .filter((item) => item.length > 0)
+    if (parts.length > 0) return parts.join(', ')
+  }
   return undefined
 }
 
 /**
- * Build the skills a domain exposes.
+ * One instance the domain vouched for, with the declaration that made it experience.
  *
- * @param graph - A loaded domain.
- * @returns the skills, and the vouched-for objects that could not become one.
+ * The declaration travels with the instance because that is what says which field is the
+ * instruction, which is the routing line, and which is the heading — none of which the engine
+ * can guess and all of which both surfaces need.
  */
-export function experienceSkills(graph: OntologyGraph): ExperienceMapping {
-  const skills: ExperienceSkill[] = []
-  const notes: string[] = []
+export interface VouchedInstance {
+  /** The type's `skill` declaration. */
+  declaration: SkillDecl
+  /** The instance itself. */
+  object: OntologyObject
+  /** The state it is in — the vouched-for one, since that is why it is here. */
+  state: string
+}
+
+/**
+ * The domain's vouched-for experience, before it is shaped into anything.
+ *
+ * Both surfaces draw from here — the skill catalog and the injected listing — because they must
+ * be the same set, and they are the same set for a stated reason: `default_state` is the domain
+ * saying which experience somebody upheld. A second traversal with the same criterion would
+ * agree today and diverge the first time the criterion moved, which is the shape of every
+ * governance bug worth writing about.
+ */
+export function vouchedInstances(graph: OntologyGraph): VouchedInstance[] {
+  const found: VouchedInstance[] = []
 
   for (const type of graph.schema.objectTypes.values()) {
     const declaration = type.skill
@@ -92,34 +129,50 @@ export function experienceSkills(graph: OntologyGraph): ExperienceMapping {
       const state = object.data[lifecycle.field]
       const current = typeof state === 'string' && state.length > 0 ? state : lifecycle.initial
       if (current !== lifecycle.defaultState) continue
-
-      const description = text(object, declaration.description)
-      const content = text(object, declaration.body)
-      if (description === undefined || content === undefined) {
-        const absent = [
-          description === undefined ? declaration.description : '',
-          content === undefined ? declaration.body : '',
-        ]
-          .filter((field) => field.length > 0)
-          .join(', ')
-        notes.push(
-          `${type.name} ${object.id} is in "${lifecycle.defaultState}" but its ${absent} ${
-            absent.includes(',') ? 'are' : 'is'
-          } empty, so it exposes no skill`,
-        )
-        continue
-      }
-
-      const whenToUse =
-        declaration.whenToUse === undefined ? undefined : text(object, declaration.whenToUse)
-      skills.push({
-        name: toSkillName(type.name, object.id),
-        description,
-        ...(whenToUse === undefined ? {} : { whenToUse }),
-        content,
-        source: 'runtime',
-      })
+      found.push({ declaration, object, state: lifecycle.defaultState })
     }
+  }
+
+  return found
+}
+
+/**
+ * Build the skills a domain exposes.
+ *
+ * @param graph - A loaded domain.
+ * @returns the skills, and the vouched-for objects that could not become one.
+ */
+export function experienceSkills(graph: OntologyGraph): ExperienceMapping {
+  const skills: ExperienceSkill[] = []
+  const notes: string[] = []
+
+  for (const { declaration, object, state } of vouchedInstances(graph)) {
+    const description = text(object, declaration.description)
+    const content = text(object, declaration.body)
+    if (description === undefined || content === undefined) {
+      const absent = [
+        description === undefined ? declaration.description : '',
+        content === undefined ? declaration.body : '',
+      ]
+        .filter((field) => field.length > 0)
+        .join(', ')
+      notes.push(
+        `${object.type} ${object.id} is in "${state}" but its ${absent} ${
+          absent.includes(',') ? 'are' : 'is'
+        } empty, so it exposes no skill`,
+      )
+      continue
+    }
+
+    const whenToUse =
+      declaration.whenToUse === undefined ? undefined : text(object, declaration.whenToUse)
+    skills.push({
+      name: toSkillName(object.type, object.id),
+      description,
+      ...(whenToUse === undefined ? {} : { whenToUse }),
+      content,
+      source: 'runtime',
+    })
   }
 
   // Sorted, so a catalog read twice reads the same — the same reason the loader sorts directory

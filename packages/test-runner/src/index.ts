@@ -56,7 +56,26 @@ export interface RegisteredTool {
 export interface TestRunnerContext {
   tools: { register(tool: RegisteredTool): void }
   logger?: { warn(message: string): void }
+  /**
+   * Look up a service by name once a context carrying it exists.
+   *
+   * Used for one thing: telling the governance plugin what these tools touch. Optional and looked
+   * up by name rather than imported, because a capability has to load with no governance plugin at
+   * all — and then it is simply a tool nobody is judging, which this plugin says out loud.
+   */
+  inject?<Service>(names: readonly string[], callback: (scoped: Service) => void): void
 }
+
+/** The declaration channel, as the governance plugin publishes it. */
+export interface GovernanceSurface {
+  declareTool(
+    name: string,
+    access: { writes?: readonly string[]; executes?: readonly string[]; commands?: readonly string[] },
+  ): () => void
+}
+
+/** The name both packages state rather than import. */
+const GOVERNANCE_SERVICE = 'deepworkGovernance'
 
 const DEFAULT_COMMAND = 'python -m pytest -q --junitxml=.junit.xml {target}'
 const JUNIT_FILE = '.junit.xml'
@@ -89,7 +108,12 @@ export interface RunReport extends RunOutcome {
 const TEXT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  properties: { text: { type: 'string', required: true } },
+  properties: { text: { type: 'string' } },
+  // `required` belongs to the object, not to the property. Nested inside `text` it is not a
+  // constraint the host understands and it rejects the whole schema — which took the plugin's
+  // `apply` down with it, so the bundle loaded as nothing at all. The eight unit tests never saw
+  // this: they call `runCommand` and `parseJunit` directly and never go through `register`.
+  required: ['text'],
 } as const
 
 /** One case, as a line: the outcome, and what kind of wrong when that is known. */
@@ -261,4 +285,27 @@ export function apply(ctx: TestRunnerContext, config: Config = {}): void {
       return { text: lines.join('\n') }
     },
   })
+
+  // What these tools touch, told to the plugin that judges them — and told rather than known,
+  // because that plugin has never heard of `run_tests` and should not have to.
+  //
+  // `executes` and not `writes`: running a project's tests runs whatever is in the target, and the
+  // target need not sit inside the domain at all. A directory rule borrowed from the domain would
+  // refuse the ordinary case of testing a project, so a tool that runs code is authorised by the
+  // domain's grant alone — and a domain that has not granted it to anybody gets a refusal rather
+  // than a free pass.
+  const governance = ctx.inject
+  if (governance === undefined) {
+    warn(
+      'the runtime exposes no service lookup, so run_tests cannot declare what it touches and is ' +
+        'not governed by the write guard',
+    )
+  } else {
+    // The callback receives a context carrying the service, not the service itself — the same shape
+    // the host's own plugins use (`inner.systemPrompt.section(...)`). Reading it as the value
+    // compiled, and then called a method on a context that does not have one.
+    governance([GOVERNANCE_SERVICE], (scoped: Record<string, GovernanceSurface>) => {
+      scoped[GOVERNANCE_SERVICE]?.declareTool('run_tests', { executes: ['target'] })
+    })
+  }
 }

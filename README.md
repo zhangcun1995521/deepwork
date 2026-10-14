@@ -3,6 +3,9 @@
 > An enterprise agent has to know what a project is, who owns it, which customer it belongs
 > to, and **what it is allowed to touch**. DeepWork is where an enterprise writes that down —
 > and where an agent's tools and permissions are derived from it, and enforced.
+>
+> It is deliberately not part of an agent. The world it describes belongs to the enterprise, so
+> the second agent, the third, and the one after that read the same one.
 
 DeepWork is a platform built on [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 (DSH). DSH ships a complete agent harness; DeepWork adds the one thing it does not ship — the
@@ -80,12 +83,25 @@ to, and what it is allowed to touch.
 
 That gap is semantic, not mechanical. This project fills it, and nothing else.
 
+There is a third layer between the model and the harness, and this project is it. A model
+reasons; a harness executes; neither knows what the enterprise *is*. That layer has to be
+**declared**, and that word is doing the work. A context assembled per request out of whatever a
+search surfaced is a guess about relevance — a good guess, and still a guess, and different on
+Tuesday. A context declared as objects, relations and rules is a fact the enterprise can be asked
+about, diffed, and held to, and the same question asked twice answers the same way.
+
+It also has to distinguish what somebody vouched for from what merely got recorded. A layer that
+cannot tell a rule a person signed off on from a note an agent wrote yesterday has made its own
+trustworthiness a second thing nobody can check — so that distinction is a lifecycle here, and
+only the vouched-for half ever reaches an agent.
+
 ```
 DSH provides                    DeepWork adds
 ──────────────                  ──────────────
 agent loop                      ontology    entities, relations, declared queries
 tools                           governance  written_by, file_location, required_fields
-skills                          audit       every write attempt, refusals included
+skills                          injection   the vouched-for rules a situation obliges
+                                audit       every write attempt, refusals included
 workflow
 plan mode
 human review
@@ -359,6 +375,29 @@ inspecting write tools. With no roles configured, every write is refused — an 
 deployment is a read-only one rather than a permissive one. Its own limits are written down
 in the code (`UNCOVERED_BY_GUARD`) rather than left to be discovered.
 
+**A tool says what it touches, and the domain says who may call it.** The guard used to
+recognise tools by name: two constants, one for writers and one for shells. That governs
+exactly the tools its author knew about, so a capability added by another package was invisible
+to it — and invisibly, which is the worst way to be ungoverned. A first capability that runs a
+project's tests walked past a boundary that refuses the same write made through `write`: three
+names refused for touching `.junit.xml`, and the fourth doing the same thing let through. So a
+tool now declares its own arguments — which hold a path it writes, a path it runs what is in, or
+a command line — and the guard reads the declaration instead of a name. The host's own tools are
+described the same way, by a built-in table, so there is one mechanism rather than two.
+
+The other half has to come from the deployment, and it does: `tool_grants` names the roles that
+may call a tool. Only the domain knows who is allowed. It matters most for `executes`, because
+running code has no directory in the domain to be judged against — the target of a test run is a
+project, not an object — so the grant is the whole of its authority, and a tool that runs code
+with no grant is **refused** rather than licensed. "Nobody said who may call this" is the worse
+answer to give an execution tool.
+
+Verified live, both directions on one call: as a role the domain did not grant, the call was
+refused with a message naming the role and the roles that may; as the granted role it ran and
+reported the project's own junit line. Both outcomes are in the audit trail, the refusal included.
+What this cannot close from here is stated rather than implied: a tool that declares nothing is not
+governed, and only a declaration can put it under the guard.
+
 **Every attempt is audited, refusals included.** A log that only records what succeeded
 cannot answer the question asked after an incident, which is what was *tried*. Entries carry
 field *names* and never field values: an audit trail that copies domain content into a second
@@ -431,7 +470,7 @@ skill catalog cannot do on its own: a catalog offers everything and lets the mod
 offers what somebody upheld, and the agent sees it in the catalog it already uses.
 
 Verified end to end: with that domain loaded, the agent's own skill listing contains
-`lesson-les-001` and not the candidate beside it. Six tests run the mapping, including the two
+`lesson-les-001` and not the candidate beside it. Seven tests run the mapping, including the two
 ways it can fail — a skill naming a field the type does not declare, and a vouched-for object
 whose named field is empty.
 
@@ -457,6 +496,89 @@ Two limits, stated rather than implied. **Routing stays with the model** — thi
 the catalog, not whether the agent loads it. And **the catalog is built at load**, so experience
 promoted during the same process appears after a restart; promotion is rare enough that
 re-registering on every write would cost more than it buys.
+
+### The same experience, written into the prompt
+
+A catalog is a list of names the model has to remember to consult, and for know-how that is
+enough — it reaches for a procedure when it wants one. A **rule** is not know-how. One the model
+may load is one it may miss, and "money is compared as integers, never as floats" is not advice.
+So the vouched-for set has a second surface, and it is the same set: the `skill` block also says
+which field carries the routing tags (`when_to_use`) and which carries the heading a listing
+groups by (`group_by`), and the plugin registers one prompt section built from them.
+
+Which of the rules land in that section is the deployment's situation, and a situation has two
+halves — because a rule is about *a thing* and *when*:
+
+```bash
+DEEPWORK_ONTOLOGY_ACTIVE="CASE-1042"                         # what you are working on
+DEEPWORK_ONTOLOGY_SITUATION="role:analyst, phase:drafting"   # who you are, and at what
+```
+
+The first half is a declaration too, not a convention. The domain names the type that carries
+"what am I making" — `situation: { product_type: Deliverable }` — and a rule's constraints are its
+declared relations into that type, whatever the relation is called. So "which rules govern the case
+I am writing" is a graph query in both directions rather than a string comparison, and renaming
+`constrains` to `governs` costs the engine nothing. An object id resolves through the product the
+domain says that kind of thing is (`produced_as`); a product id names it directly, which is what
+covers the products with no object behind them — a pytest script never enters the ontology, since
+the domain stores a pointer rather than a copy.
+
+Naming the thing rather than the phase is the point. A phase is a vocabulary somebody has to
+remember and can get wrong in silence; `CASE-1042` is something they can see and copy, and the
+tags are computed from it. That is the whole of what was meant by the ontology knowing where it is.
+
+What this answers is not "what does the enterprise know" but **what does this moment require**,
+and the answer is computed from what the session is working on rather than chosen by the model. A
+search box answers "what might be relevant"; this answers "what applies here", and it is the same
+answer every time the situation is the same. The gap between those two questions is where a rule
+gets missed.
+
+More context is not the goal, either, and it is not free. Every rule that reaches the prompt
+competes for attention with the task itself; a rule that is merely *available* competes for
+nothing. So the mechanism is built to keep that distinction explicit rather than to maximise what
+is loaded — injected is what a person signed off on and the situation demands, and everything else
+stays one lookup away, named and countable rather than gone.
+
+A rule applies when it clears two gates, each of which opens on what its side did not state: it
+constrains one of the products being worked on **or** constrains nothing in particular — "money is
+compared as integers" is not about any one deliverable and must survive naming one — and it shares
+any one tag with the situation, or declares none. Unstated means every vouched-for rule, because a
+requirement is the wrong thing to be selective about by accident. A tag that matches nothing, or an
+id nothing answers to, is reported rather than quietly yielding an empty section: from inside the
+rule set, a typo and a genuine silence look identical, and only one of them is a mistake.
+
+It also carries a ceiling, because a domain grows and a prompt does not. `DEEPWORK_ONTOLOGY_BUDGET`
+caps the listed rules in characters — 32000 by default, about 230 rules against the 71 this was
+built for, so it does not bind today. When it does bind, the ranking is what it spends: most rules
+carry a role tag, so a two-tag situation matches a large part of a domain and "matches" stops
+meaning anything on its own. The rank is how many dimensions the situation actually pins down — the
+product counts as one, each tag dimension as another — so a rule written for this product, role and
+phase outranks one that only names the role, and what is held back is the most general advice
+rather than whichever rule was listed last. That is also why the ceiling measures the list and not
+the framing around it: counting the framing would put the note that reports the omissions in
+competition with the rules it describes.
+
+Three decisions worth naming, since each is a place the obvious thing is wrong:
+
+- **The section is built at load**, from the graph already in hand rather than re-read per turn.
+  What is injected therefore cannot drift from what the read tools return, and a domain file that
+  becomes unreadable mid-session cannot fail prompt assembly. The cost is the catalog's cost:
+  promotion waits for a restart.
+- **`interpolate: false`**, because the host's `{{variable}}` references are strict and this text
+  comes from domain data. A rule that happened to contain a brace pair would otherwise take every
+  turn down with it. Not hypothetical: the check that pins it is a rule whose body contains
+  `{{undeclared}}`, injected and answered back verbatim.
+- **It registers even when the situation selects nothing.** Registering only when rules were
+  selected meant a mistyped tag produced no section at all, so the one case where the deployment
+  needs telling was the one case where it was told nothing. A live run found that, not the tests.
+
+Verified end to end: the same question under two situations returns two different sets of
+must-follow rules, and a candidate is in neither. Naming an object id pulls the right product out of
+the ontology and the right subset of rules with it — and a rule that does not govern that product
+leaves the must-see set while staying in the skill catalog, which is the difference between "not
+required" and "withheld". With the ceiling set low enough to bind, the agent reports the count it
+was given, quotes the sentence saying what was held back, and answers yes when asked whether one of
+the held-back rules is still in its catalog.
 
 ## Design notes
 

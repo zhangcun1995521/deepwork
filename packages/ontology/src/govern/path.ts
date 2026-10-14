@@ -13,37 +13,6 @@
 
 import { isAbsolute, relative, resolve } from 'node:path'
 
-/** Tools that write to a path they name in their arguments. */
-export const WRITE_TOOLS: readonly string[] = ['edit', 'write']
-
-/**
- * Tools that can write without ever naming a path argument.
- *
- * Both shells are listed because the platform ships a bash tool and a PowerShell
- * tool and disables one per platform: checking only the one that happens to be
- * enabled today is how a guard ends up covering nothing on the other OS.
- */
-export const SHELL_TOOLS: readonly string[] = ['bash', 'pwsh']
-
-/**
- * Pull the target path out of a write tool's arguments.
- *
- * The field name is not guaranteed by anything, so every name the shipped tools
- * have used is tried. Returning `undefined` is meaningful rather than convenient:
- * the caller treats "a write tool with no discoverable path" as a denial, because
- * the alternative is a guard that silently stops guarding the moment a field is
- * renamed.
- */
-export function extractPathFromArgs(args: unknown): string | undefined {
-  if (typeof args !== 'object' || args === null) return undefined
-  const record = args as Record<string, unknown>
-  for (const field of ['path', 'file_path', 'filename', 'file', 'content_path']) {
-    const value = record[field]
-    if (typeof value === 'string' && value.length > 0) return value
-  }
-  return undefined
-}
-
 /** Redirect targets, e.g. `echo x > notes.md` or `echo x >> notes.md`. */
 const REDIRECT = /(?:>>|>)\s*([^\s|;&]+)/g
 

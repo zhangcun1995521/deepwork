@@ -12,7 +12,8 @@ import { resolve } from 'node:path'
 import type { ObjectTypeDecl } from '../engine/schema.ts'
 import type { RoleRule } from './permission.ts'
 import { UNCOVERED_BY_GUARD, writeGuard, writableDirectories } from './guard.ts'
-import { extractPathFromArgs, extractPathsFromShell, isInside } from './path.ts'
+import { BUILT_IN_ACCESS } from './access.ts'
+import { extractPathsFromShell, isInside } from './path.ts'
 
 /** Minimal object type; only the fields the guard reads are meaningful. */
 function type(name: string, directory: string, writtenBy: string[]): ObjectTypeDecl {
@@ -121,10 +122,22 @@ test('writable directories come from the schema, and skip types without one', ()
   assert.equal(dirs[0], resolve(ROOT, 'cases'))
 })
 
-test('path extraction reads the field names the shipped tools use', () => {
-  assert.equal(extractPathFromArgs({ file_path: 'a.md' }), 'a.md')
-  assert.equal(extractPathFromArgs({ path: 'a.md' }), 'a.md')
-  assert.equal(extractPathFromArgs({ content: 'x' }), undefined)
+test('the host tools are described by the built-in table, not by a list of names', () => {
+  // The names had to live somewhere. They live in a table of *declarations* rather than a pair of
+  // name lists, so the guard has one way of learning about a tool and capabilities can declare
+  // their own the same way. This pins the field names the shipped tools actually use.
+  for (const name of ['write', 'edit']) {
+    assert.deepEqual(BUILT_IN_ACCESS[name]?.writes, [
+      'path',
+      'file_path',
+      'filename',
+      'file',
+      'content_path',
+    ])
+  }
+  for (const name of ['bash', 'pwsh']) {
+    assert.deepEqual(BUILT_IN_ACCESS[name]?.commands, ['command', 'cmd'])
+  }
 })
 
 test('shell extraction finds redirects and tee targets', () => {

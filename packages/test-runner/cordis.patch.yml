@@ -8,11 +8,17 @@
     - id: deepwork-test-runner
       name: '@zhangcun123/test-runner'
       config:
+        # Every `!!js` expression is a single-quoted scalar on one line, and that is not cosmetic.
+        # YAML reads a bare scalar containing ` : ` as a mapping — `timeoutSeconds` came out as the
+        # object `{'[object Object]': 600}` — and a folded one arrives as an unresolved string. Both
+        # shapes reached the plugin as something that was not the setting, and the row failed to
+        # load at all, so the bundle was installed and inert with nothing said.
+        #
         # Where the tests live. A path, not a command: the directory is what the capability is
         # allowed to run in, so it is a deployment fact rather than something a caller supplies.
-        workspace: !!js process.env.DEEPWORK_TEST_WORKSPACE ?? ''
+        workspace: !!js 'process.env.DEEPWORK_TEST_WORKSPACE ?? ""'
         # The command to run. Platform configuration, never a model argument — a capability that
         # runs whatever it is handed is a remote shell with extra steps.
-        command: !!js process.env.DEEPWORK_TEST_COMMAND ?? 'python -m pytest -q --junitxml=.junit.xml'
+        command: !!js 'process.env.DEEPWORK_TEST_COMMAND ?? "python -m pytest -q --junitxml=.junit.xml"'
         # Seconds before the run is killed. A suite that hangs must not hang the agent with it.
-        timeoutSeconds: !!js process.env.DEEPWORK_TEST_TIMEOUT ? Number(process.env.DEEPWORK_TEST_TIMEOUT) : 600
+        timeoutSeconds: !!js 'process.env.DEEPWORK_TEST_TIMEOUT ? Number(process.env.DEEPWORK_TEST_TIMEOUT) : 600'

@@ -67,6 +67,7 @@ object_types:
     skill:
       description: rule
       when_to_use: applies_to
+      group_by: kind
       body: rule
 
   # A verdict is an ordinary object. The engine does not know it is a judgement; the domain

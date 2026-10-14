@@ -89,3 +89,34 @@ test('a skill naming a field the type does not have is a problem, not a skill', 
   assert.match(reported, /"skill" names fields mounts_typo, which the type does not declare/)
   assert.equal(graph.schema.objectTypes.get('Widget')?.skill, undefined)
 })
+
+test('a routing field holding a list is rendered, not dropped in silence', (t) => {
+  // A routing dimension is naturally a set of tags, so a domain naming one names a list. Dropping
+  // it would leave the declaration saying the note is there and every skill without it — the one
+  // failure this module reports rather than hides.
+  const root = mkdtempSync(join(tmpdir(), 'deepwork-skills-'))
+  cpSync(example('lessons'), root, { recursive: true })
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+
+  const schema = join(root, 'schema.yaml')
+  writeFileSync(
+    schema,
+    readFileSync(schema, 'utf-8').replace(
+      'applies_to: { type: string }',
+      'applies_to: { type: "list[string]" }',
+    ),
+  )
+  const lesson = join(root, 'objects', 'lessons', 'LES-001.yaml')
+  writeFileSync(
+    lesson,
+    readFileSync(lesson, 'utf-8').replace(
+      /^applies_to: .*$/m,
+      'applies_to: [artifact:pull_request, role:checker]',
+    ),
+  )
+
+  const { skills, notes } = experienceSkills(loadGraph(root))
+
+  assert.deepEqual(notes, [])
+  assert.equal(skills[0]?.whenToUse, 'artifact:pull_request, role:checker')
+})

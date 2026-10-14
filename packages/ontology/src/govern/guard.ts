@@ -26,15 +26,10 @@
 import { resolve } from 'node:path'
 
 import type { ObjectTypeDecl } from '../engine/schema.ts'
+import { BUILT_IN_ACCESS, type ToolGovernance } from './access.ts'
 import type { RoleRule } from './permission.ts'
 import { roleOf } from './permission.ts'
-import {
-  SHELL_TOOLS,
-  WRITE_TOOLS,
-  extractPathFromArgs,
-  extractPathsFromShell,
-  isInside,
-} from './path.ts'
+import { extractPathsFromShell, isInside } from './path.ts'
 
 /** One tool call, as the runtime hands it to a guard. */
 export interface GuardedCall {
@@ -83,6 +78,14 @@ export interface WriteGuardOptions {
    * rather than written from here, so the guard stays a function over its inputs.
    */
   onDecision?: (decision: GuardDecision) => void
+  /**
+   * What is known about a tool, from its own declaration or from the built-in table.
+   *
+   * Injected rather than imported so the guard stays a function over its inputs, and so a
+   * deployment can be built in a test without a registry. Omitting it means only the host's own
+   * tools are governed, which is what this guard did before capabilities could declare anything.
+   */
+  govern?: (tool: string) => ToolGovernance | undefined
 }
 
 /**
@@ -119,6 +122,16 @@ export function writeGuard(options: WriteGuardOptions): (call: GuardedCall) => s
   const { cwd, ontologyRoot, roles, objectTypes, onDecision } = options
   const types = [...objectTypes]
 
+  // Omitting the lookup must not disable the guard's own work: defaulting to "nothing is governed"
+  // would make forgetting to wire it fail open, which is the direction this module never fails in.
+  // So the default is the host's own table, and a registry only ever adds to what is judged.
+  const govern =
+    options.govern ??
+    ((tool: string): ToolGovernance | undefined => {
+      const access = BUILT_IN_ACCESS[tool]
+      return access === undefined ? undefined : { access, source: 'built-in' }
+    })
+
   return (call) => {
     const record = (decision: Omit<GuardDecision, 'tool' | 'agentId'>): string | undefined => {
       onDecision?.({
@@ -129,9 +142,14 @@ export function writeGuard(options: WriteGuardOptions): (call: GuardedCall) => s
       return decision.denied ? decision.detail : undefined
     }
 
-    const isWrite = WRITE_TOOLS.includes(call.name)
-    const isShell = SHELL_TOOLS.includes(call.name)
-    if (!isWrite && !isShell) return undefined
+    const governance = govern(call.name)
+    if (governance === undefined) return undefined
+    const { access, grantedTo } = governance
+
+    const writes = access.writes ?? []
+    const executes = access.executes ?? []
+    const commands = access.commands ?? []
+    if (writes.length === 0 && executes.length === 0 && commands.length === 0) return undefined
 
     // Who is asking. No role means no writable directory to reason about, and
     // guessing one for an unidentified caller is how a policy becomes decorative.
@@ -153,8 +171,47 @@ export function writeGuard(options: WriteGuardOptions): (call: GuardedCall) => s
       })
     }
 
+    // A tool that runs code is authorised by its grant and not by a directory: what it runs need
+    // not sit in the domain at all, and a directory rule borrowed from the domain would refuse the
+    // ordinary case of running a project's tests in a project. So the grant is the whole authority,
+    // and the domain saying nothing is a refusal rather than a licence — "nobody said who may call
+    // this" is the worse answer to give an execution tool.
+    if (executes.length > 0) {
+      if (grantedTo === undefined) {
+        return record({
+          denied: true,
+          role,
+          reason: 'no-grant-declared',
+          detail:
+            `${call.name} refused: it runs code (${executes.join(', ')}), and this domain declares ` +
+            'no tool_grants entry saying who may call it. Add one, or call it through a role the ' +
+            'domain grants.',
+        })
+      }
+      if (!grantedTo.includes(role)) {
+        return record({
+          denied: true,
+          role,
+          reason: 'tool-not-granted-to-role',
+          detail:
+            `${call.name} refused: role "${role}" is not in this domain's tool_grants for it ` +
+            `(${grantedTo.length === 0 ? 'nobody is' : grantedTo.join(', ')}).`,
+        })
+      }
+    } else if (grantedTo !== undefined && !grantedTo.includes(role)) {
+      // A tool that declares paths and also carries a grant is held to both halves.
+      return record({
+        denied: true,
+        role,
+        reason: 'tool-not-granted-to-role',
+        detail:
+          `${call.name} refused: role "${role}" is not in this domain's tool_grants for it ` +
+          `(${grantedTo.length === 0 ? 'nobody is' : grantedTo.join(', ')}).`,
+      })
+    }
+
     const allowed = writableDirectories(types, role, ontologyRoot)
-    if (allowed.length === 0) {
+    if (allowed.length === 0 && (writes.length > 0 || commands.length > 0)) {
       return record({
         denied: true,
         role,
@@ -162,23 +219,53 @@ export function writeGuard(options: WriteGuardOptions): (call: GuardedCall) => s
         detail: `${call.name} refused: role "${role}" is not named in written_by for any object type.`,
       })
     }
+    if (allowed.length === 0) {
+      return record({ denied: false, role })
+    }
 
-    if (isWrite) {
-      const raw = extractPathFromArgs(call.arguments)
-      if (raw === undefined) {
-        // The ported implementation allowed this case, which meant a renamed
-        // argument silently disabled the guard. Denying keeps the failure loud.
+    for (const argument of commands) {
+      const targets = extractPathsFromShell(
+        (call.arguments as Record<string, unknown> | undefined)?.[argument],
+        cwd,
+      )
+      for (const target of targets) {
+        if (allowed.some((base) => isInside(base, target))) continue
         return record({
           denied: true,
           role,
-          reason: 'no-path-in-arguments',
-          detail: `${call.name} refused: no path found in the arguments, so the write cannot be authorised.`,
+          target,
+          reason: 'redirect-outside-granted-directories',
+          detail:
+            `${call.name} refused: the command redirects into ${target}, outside the directories ` +
+            `role "${role}" may write (${allowed.join(', ')}).`,
         })
       }
+    }
+
+    if (writes.length === 0) return record({ denied: false, role })
+
+    // Every declared write argument is looked at, not the first one found. A tool that names two
+    // paths must not be authorised by the one that happens to be inside the grant.
+    const found = writes
+      .map((argument) => (call.arguments as Record<string, unknown> | undefined)?.[argument])
+      .filter((value): value is string => typeof value === 'string' && value.length > 0)
+
+    if (found.length === 0) {
+      // The ported implementation allowed this case, which meant a renamed argument
+      // silently disabled the guard. Denying keeps the failure loud.
+      return record({
+        denied: true,
+        role,
+        reason: 'no-path-in-arguments',
+        detail:
+          `${call.name} refused: no path found in the arguments (${writes.join(', ')}), so the ` +
+          'write cannot be authorised.',
+      })
+    }
+
+    for (const raw of found) {
       const target = resolve(cwd, raw)
-      if (allowed.some((base) => isInside(base, target))) {
-        return record({ denied: false, role, target })
-      }
+      if (allowed.some((base) => isInside(base, target))) continue
       return record({
         denied: true,
         role,
@@ -189,24 +276,7 @@ export function writeGuard(options: WriteGuardOptions): (call: GuardedCall) => s
           `(${allowed.join(', ')}).`,
       })
     }
-
-    const targets = extractPathsFromShell(
-      (call.arguments as Record<string, unknown> | undefined)?.command,
-      cwd,
-    )
-    for (const target of targets) {
-      if (allowed.some((base) => isInside(base, target))) continue
-      return record({
-        denied: true,
-        role,
-        target,
-        reason: 'redirect-outside-granted-directories',
-        detail:
-          `${call.name} refused: the command redirects into ${target}, outside the directories ` +
-          `role "${role}" may write (${allowed.join(', ')}).`,
-      })
-    }
-    return record({ denied: false, role, ...(targets[0] === undefined ? {} : { target: targets[0] }) })
+    return record({ denied: false, role, target: resolve(cwd, found[0] ?? '') })
   }
 }
 

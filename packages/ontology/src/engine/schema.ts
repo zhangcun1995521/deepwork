@@ -100,6 +100,15 @@ export interface SkillDecl {
   whenToUse?: string
   /** Field holding the instructions the agent loads. */
   body: string
+  /**
+   * Field holding the heading a rendered listing groups by, when one is declared.
+   *
+   * Declared for the same reason as the other two: which field classifies a domain's experience
+   * is a fact about the domain, and an engine that guessed a name like `kind` would work on
+   * exactly the one domain it was written against. The skill catalog has no use for it — it is
+   * read by the injected listing, where forty rules in a flat run are rules nobody follows.
+   */
+  groupBy?: string
 }
 
 /** A relation type: a named, directed edge between two object types. */
@@ -167,6 +176,25 @@ export interface OntologySchema {
   actionTypes: Record<string, unknown>
   /** Declared actions that passed validation. Invalid ones are warnings, not actions. */
   actions: ActionDecl[]
+  /**
+   * Object type whose instances a rule is understood to be constraining, when the domain says so.
+   *
+   * Declared at the top level rather than repeated per type, because it is one fact about the
+   * domain. What it buys is that "which products does this rule constrain" is answered from the
+   * relations the domain already declares, rather than from a field name the engine would have to
+   * know: the rule's constraints are its links into this type, whatever the relation is called.
+   */
+  situationProduct?: string
+  /**
+   * Who may call which tool, as the domain declares it.
+   *
+   * The other half of a tool's governance. A capability says what its tool touches; only the
+   * deployment can say who is allowed to touch it, and this is where the deployment already states
+   * that kind of thing — beside `written_by`, for the same reason. A tool absent from this map is
+   * one the domain said nothing about, which the guard reads differently depending on whether the
+   * tool touches anything outside the domain.
+   */
+  toolGrants?: Map<string, string[]>
   /** The document as parsed. */
   raw: Record<string, unknown>
   /** Non-fatal problems found while parsing. Never empty by accident. */
@@ -261,6 +289,7 @@ function parseSkillDecl(
   const description = typeof raw.description === 'string' ? raw.description : ''
   const body = typeof raw.body === 'string' ? raw.body : ''
   const whenToUse = typeof raw.when_to_use === 'string' ? raw.when_to_use : ''
+  const groupBy = typeof raw.group_by === 'string' ? raw.group_by : ''
   const missing = [
     description.length === 0 ? 'description' : '',
     body.length === 0 ? 'body' : '',
@@ -272,7 +301,12 @@ function parseSkillDecl(
     return undefined
   }
 
-  const named = [description, body, ...(whenToUse.length === 0 ? [] : [whenToUse])]
+  const named = [
+    description,
+    body,
+    ...(whenToUse.length === 0 ? [] : [whenToUse]),
+    ...(groupBy.length === 0 ? [] : [groupBy]),
+  ]
   const unknown = named.filter((field) => fields[field] === undefined)
   if (unknown.length > 0) {
     warnings.push(
@@ -290,7 +324,12 @@ function parseSkillDecl(
     return undefined
   }
 
-  return { description, body, ...(whenToUse.length === 0 ? {} : { whenToUse }) }
+  return {
+    description,
+    body,
+    ...(whenToUse.length === 0 ? {} : { whenToUse }),
+    ...(groupBy.length === 0 ? {} : { groupBy }),
+  }
 }
 
 /**
@@ -477,6 +516,53 @@ export function parseSchema(root: string): OntologySchema {
   }
 
   const version = document.version
+
+  // Top-level `situation`: which object type carries the "what am I making" half of a situation.
+  // Names a type that must exist, for the reason every other named field must: a declaration that
+  // cannot take effect is the failure this project exists to catch rather than to ship.
+  let situationProduct: string | undefined
+  const rawSituation = document.situation
+  if (rawSituation !== undefined && rawSituation !== null) {
+    if (!isMapping(rawSituation)) {
+      warnings.push('"situation" is not a mapping; ignored')
+    } else {
+      const declared = rawSituation.product_type
+      if (typeof declared === 'string' && declared.length > 0) {
+        if (!objectTypes.has(declared)) {
+          warnings.push(
+            `"situation" names product_type "${declared}", which the schema does not declare; ` +
+              'no situation can be computed from it',
+          )
+        } else {
+          situationProduct = declared
+        }
+      }
+    }
+  }
+
+  // Top-level `tool_grants`: who may call which tool. Data rather than a constant in the guard, so
+  // that changing who may run a project's tests is a domain edit rather than a release — and so the
+  // policy sits where the rest of this deployment's policy sits, beside `written_by`.
+  const toolGrants = new Map<string, string[]>()
+  const rawGrants = document.tool_grants
+  if (rawGrants !== undefined && rawGrants !== null) {
+    if (!isMapping(rawGrants)) {
+      warnings.push('"tool_grants" is not a mapping; ignored')
+    } else {
+      for (const [tool, value] of Object.entries(rawGrants)) {
+        if (!Array.isArray(value) || value.some((role) => typeof role !== 'string')) {
+          warnings.push(`"tool_grants" entry "${tool}" is not a list of roles; ignored`)
+          continue
+        }
+        const roles = value.filter((role): role is string => typeof role === 'string' && role.length > 0)
+        // An empty list is a decision, not an omission: it says nobody may call this, which is what
+        // a tool under review should be. Kept rather than dropped, so it cannot be confused with
+        // silence — the guard reads the two differently.
+        toolGrants.set(tool, roles)
+      }
+    }
+  }
+
   return {
     root,
     ...(typeof version === 'string' || typeof version === 'number' ? { version: String(version) } : {}),
@@ -485,6 +571,8 @@ export function parseSchema(root: string): OntologySchema {
     functions: isMapping(document.functions) ? document.functions : {},
     actionTypes: isMapping(document.action_types) ? document.action_types : {},
     actions,
+    ...(situationProduct === undefined ? {} : { situationProduct }),
+    ...(toolGrants.size === 0 ? {} : { toolGrants }),
     raw: document,
     warnings,
   }

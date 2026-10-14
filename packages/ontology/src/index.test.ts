@@ -36,6 +36,8 @@ interface Harness {
   registered: string[]
   mounted?: (call: RuntimeToolCall) => string | undefined
   logs: string[]
+  /** Every prompt section the plugin registered, as `name -> text`. */
+  sections: Map<string, string>
 }
 
 /** A context that records what the plugin does, without a runtime or a domain on disk. */
@@ -44,6 +46,7 @@ function harness(): Harness {
     root: '',
     registered: [],
     logs: [],
+    sections: new Map(),
     ctx: undefined as unknown as OntologyContext,
   }
   state.ctx = {
@@ -60,7 +63,23 @@ function harness(): Harness {
       warn: (message: string) => state.logs.push(`warn: ${message}`),
       info: (message: string) => state.logs.push(`info: ${message}`),
     },
-    inject: () => {},
+    inject: (names, callback) => {
+      // Only the prompt registry is stood up. Everything else the plugin asks for is absent, and
+      // the plugin has to work without it — which is exactly what leaving the others empty tests.
+      if (!names.includes('systemPrompt')) return
+      callback({
+        systemPrompt: {
+          section: (section) => {
+            state.sections.set(section.name, section.text)
+            return () => {}
+          },
+          getSectionOrder: () => 0,
+        },
+        effect: (callback) => {
+          callback()
+        },
+      } as never)
+    },
   }
   return state
 }
@@ -117,4 +136,43 @@ test('a shell redirect outside the domain is refused once the guard is mounted',
     agent: { id: 'analyst-1' },
   })
   assert.match(refusal ?? '', /redirects into/)
+})
+
+const LESSONS = resolve(fileURLToPath(import.meta.url), '../../examples/lessons')
+
+/** Mount the lessons example, which is the smallest domain that vouches for anything. */
+function mountLessons(situation: string): Harness {
+  const h = harness()
+  h.root = mkdtempSync(join(tmpdir(), 'deepwork-index-lessons-'))
+  cpSync(LESSONS, h.root, { recursive: true })
+  apply(h.ctx, { ontologyRoot: h.root, situation, auditLog: join(h.root, 'audit.jsonl') })
+  return h
+}
+
+test('the vouched-for rules reach the prompt, which is what a catalog cannot do', () => {
+  const h = mountLessons('artifact:pull_request')
+  const text = h.sections.get('deepwork:experience') ?? ''
+
+  assert.match(text, /LES-001/, 'the rule the situation governs')
+  assert.doesNotMatch(text, /LES-002/, 'a candidate may not be loaded either')
+  assert.doesNotMatch(text, /LES-003/, 'nor a rejected one')
+})
+
+test('an unstated situation injects everything rather than nothing', () => {
+  const h = mountLessons('')
+  assert.match(h.sections.get('deepwork:experience') ?? '', /LES-001/)
+})
+
+test('a situation selecting nothing still registers, so the mistake is visible', () => {
+  // The failure this pins is a real one that the live run found: registering only when rules were
+  // selected meant that a mistyped tag produced no section at all — so the one case where the
+  // deployment needs telling was the one case where it was told nothing.
+  const h = mountLessons('phase:revenge')
+
+  assert.ok(h.sections.has('deepwork:experience'), 'the section is registered even with no rules')
+  assert.match(h.sections.get('deepwork:experience') ?? '', /phase:revenge.*match nothing|match nothing/)
+  assert.ok(
+    h.logs.some((line) => line.includes('phase:revenge')),
+    'and the boot log names the tag, for whoever has to fix it',
+  )
 })
