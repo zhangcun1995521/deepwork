@@ -59,6 +59,9 @@ export type DenialReason =
   // Action preconditions: the world was not in the state the action assumed.
   | 'already-exists'
   | 'not-found'
+  // A file for this id exists and did not load. Kept apart from `missing-required-field`, which is
+  // what a caller would otherwise be told about an object that is present and unreadable.
+  | 'unreadable-instance'
 
 /** The outcome of a permission check. */
 export type Permission =

@@ -612,3 +612,32 @@ test('a produce-only write is recorded as provenance for the next check', () => 
   const recorded = readFileSync(join(root, '.provenance.jsonl'), 'utf8')
   assert.match(recorded, /"type":"Signoff","id":"SIG-4","agentId":"reviewer-session-1"/)
 })
+
+test('a file that exists and did not load is reported as that, not as missing fields', (t) => {
+  // The symptom that prompted this: a duplicate key in an instance file makes the YAML parse throw,
+  // so the loader skips it and says so at boot. By the time a write arrives, all that is left is an
+  // id the graph has never heard of — and the next check down the path reported
+  // `missing-required-field`, naming two fields that were sitting in the file the whole time.
+  // A diagnosis pointing at the wrong part of the problem is worse than no diagnosis.
+  const dir = scratchDomain('project-delivery')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+
+  const project = join(dir, 'objects', 'projects', 'P-001.yaml')
+  writeFileSync(project, `${readFileSync(project, 'utf-8')}status: draft\nstatus: closed\n`)
+
+  const graph = loadGraph(dir)
+  assert.ok(graph.warnings.length > 0, 'the loader noticed, at boot')
+  assert.equal(graph.byId.has('Project:P-001'), false, 'and the instance is not in the graph')
+
+  const { audit } = collector()
+  const tool = writeTool(deriveWriteTools(graph, { roles: ANALYST, audit, now: CLOCK }).tools)
+
+  assert.throws(
+    () =>
+      (tool.execute as (args: unknown, call: unknown) => unknown)(
+        { type: 'Project', id: 'P-001', data: { status: 'draft' } },
+        { agentId: 'analyst-session-1' },
+      ),
+    /unreadable-instance/,
+  )
+})

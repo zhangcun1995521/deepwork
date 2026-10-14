@@ -20,7 +20,7 @@
  * @module @zhangcun123/ontology/tools/write
  */
 
-import { writeFileSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { dump as dumpYaml } from 'js-yaml'
@@ -226,9 +226,25 @@ export function writeEntity(
       // past the type's grant.
       const counterOnly = Object.keys(data).length === 0 && increments.length > 0
 
+      // A call that carries nothing but the lifecycle field is the same kind of thing, and the
+      // second case where `written_by` is the wrong question. Moving a record between declared
+      // states is a claim about its standing, not authorship of its content — the schema keeps
+      // those apart already, in `written_by` and a transition's `by`, and asking both questions of
+      // a pure move conflates them.
+      //
+      // Without this, a role named in a transition and nowhere in `written_by` could never make the
+      // move: the transition would be declared, valid, and dead. That is the failure this project
+      // exists to catch, and a domain hit it the first time it tried to say "the reviewer sends it
+      // back, and the reviewer does not rewrite it".
+      const transitionOnly =
+        type.lifecycle !== undefined &&
+        increments.length === 0 &&
+        Object.keys(data).length === 1 &&
+        Object.hasOwn(data, type.lifecycle.field)
+
       const decision: Permission = isSafeId(id)
         ? authoriseWrite(type, graph.root, file, call?.agentId, roles, {
-            requireWrittenBy: !counterOnly,
+            requireWrittenBy: !(counterOnly || transitionOnly),
           })
         : {
             allowed: false,
@@ -254,6 +270,23 @@ export function writeEntity(
       // The identity field is taken from `id`, never from `data`, so a caller cannot
       // write an entity whose file name and identity disagree.
       const existing = graph.byId.get(`${type.name}:${id}`)
+
+      // A file that exists and did not load is not a create, and saying so is the difference
+      // between a diagnosis and a wild goose chase. The loader reports the unreadable file as a
+      // warning at boot; by the time a write arrives, the only symptom left is an id the graph has
+      // never heard of — which the required-field check below would report as missing fields, the
+      // one thing that is *not* wrong with it. Found the hard way: a duplicate key in a domain file
+      // produced `missing-required-field` naming two fields that were present in the file.
+      if (existing === undefined && type.directory.length > 0) {
+        const candidate = join(graph.root, type.directory, `${id}.yaml`)
+        if (existsSync(candidate)) {
+          deny(
+            'unreadable-instance',
+            `a file exists at ${candidate} but this domain did not load it, so this is not a ` +
+              'create. Fix what the loader reported at startup before writing here.',
+          )
+        }
+      }
 
       // A change of state is not an ordinary field edit: the schema says who may make
       // that claim and from where. Checked on this same write path rather than in an

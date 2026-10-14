@@ -10,7 +10,7 @@
  * verdict from somebody else, and a read that returns only what was vouched for.
  */
 import assert from 'node:assert/strict'
-import { cpSync, mkdtempSync, rmSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
@@ -148,6 +148,13 @@ test('vouching and moving are separate grants, so no role can do both', (t) => {
   )
 
   // ...and a verifier writes verdicts and cannot move the lesson.
+  //
+  // The reason is worth reading closely, because it changed: this used to be refused as
+  // `role-not-permitted` — the verifier is not in `written_by` — and it is now refused as
+  // `transition-not-permitted`, the verifier not being a role the move names. A pure move is
+  // authorised by the transition's `by` and not by `written_by`, which keeps vouching and moving
+  // apart in both directions: the grant that lets a role record a verdict is not the grant that
+  // lets it act on one, and a role that may move cannot thereby author content.
   assert.throws(
     () =>
       run(
@@ -155,7 +162,7 @@ test('vouching and moving are separate grants, so no role can do both', (t) => {
         { type: 'Lesson', id: 'LES-002', data: { status: 'verified' } },
         'verifier-session-1',
       ),
-    /write denied \(role-not-permitted\)/,
+    /write denied \(transition-not-permitted\)/,
   )
   assert.equal(entries.filter((entry) => entry.outcome === 'denied').length, 2)
 })
@@ -344,4 +351,60 @@ test('experience goes in as a candidate, comes out as a skill only on a verdict'
 
   // Out. The catalog the agent reads now contains it — built from the same state a read uses.
   assert.deepEqual(skills(), ['lesson-les-001', 'lesson-les-900'])
+})
+
+test('a role the move names may move without being able to author', (t) => {
+  // The case a real domain hit first: "the reviewer sends it back, and the reviewer does not rewrite
+  // it". Declared, both halves valid, and dead — because a pure move was being authorised by
+  // `written_by` as well, and the reviewer appears in that list nowhere.
+  //
+  // The copy removes `curator` from `written_by` and leaves every transition exactly as declared, so
+  // the only thing granting the move is the move itself.
+  const root = mkdtempSync(join(tmpdir(), 'deepwork-move-only-'))
+  cpSync(example('lessons'), root, { recursive: true })
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const schema = join(root, 'schema.yaml')
+  writeFileSync(
+    schema,
+    readFileSync(schema, 'utf-8').replace(
+      /^    written_by: \[contributor, curator\]$/m,
+      '    written_by: [contributor]',
+    ),
+  )
+
+  const graph = loadGraph(root)
+  const entries: AuditEntry[] = []
+  const { tools } = deriveWriteTools(graph, {
+    roles: [CONTRIBUTOR, CURATOR, VERIFIER],
+    audit: (entry) => entries.push(entry),
+    now: CLOCK,
+  })
+  const write = tool(tools, 'ontology_write')
+
+  // Authoring content is refused: the curator is not in `written_by`, and a move is not authorship
+  // of the fields that go with it.
+  assert.throws(
+    () =>
+      run(
+        write,
+        { type: 'Lesson', id: 'LES-001', data: { rule: 'Rewritten by a mover.' } },
+        'curator-session-1',
+      ),
+    /role-not-permitted/,
+  )
+
+  // The move itself is not: the transition names the curator, and nothing else has to.
+  run(
+    write,
+    { type: 'Verdict', id: 'VER-900', data: { lesson: 'LES-002', outcome: 'uphold' } },
+    'verifier-session-1',
+  )
+  run(write, { type: 'Lesson', id: 'LES-002', data: { status: 'verified' } }, 'curator-session-1')
+
+  assert.equal(graph.byId.get('Lesson:LES-002')?.data.status, 'verified')
+  assert.deepEqual(
+    entries.filter((entry) => entry.outcome === 'denied').map((entry) => entry.reason),
+    ['role-not-permitted'],
+    'and only the authoring attempt was denied',
+  )
 })
