@@ -123,3 +123,52 @@ test('an instance with no value on disk is treated as being in the initial state
   assert.equal(decision.allowed, true)
   assert.equal(decision.allowed && decision.change, true)
 })
+
+test('a declared move back to an earlier state is a move like any other', () => {
+  // A lifecycle is a graph, not a ladder, and this pins it because the shape is easy to assume away.
+  // Every example in this repository runs forwards — four gated stages, a candidate becoming
+  // verified — so a reader could reasonably take "a sequence of states" to mean the states are
+  // visited once, in order. They are not: a review that sends work back is a cycle, and it is
+  // declared beside the move that got the work there.
+  const { lifecycle } = declaration({
+    ...VALID,
+    transitions: {
+      ...VALID.transitions,
+      revise: { from: ['verified'], to: 'candidate', by: ['curator'] },
+    },
+  })
+
+  const forward = authoriseTransition(lifecycle as LifecycleDecl, 'candidate', 'verified', 'curator')
+  const back = authoriseTransition(lifecycle as LifecycleDecl, 'verified', 'candidate', 'curator')
+
+  assert.equal(forward.allowed, true)
+  assert.equal(back.allowed, true, 'a state that has been left may be entered again')
+  assert.equal(back.allowed && back.transition?.name, 'revise')
+})
+
+test('a move nobody declared is refused, naming what was declared instead', () => {
+  // The counterpart, and the sentence a domain relies on before it has decided: the engine refuses
+  // rather than guessing at a path, and says which paths exist.
+  const { lifecycle } = declaration(VALID)
+  const wrong = authoriseTransition(lifecycle as LifecycleDecl, 'verified', 'candidate', 'curator')
+
+  assert.equal(wrong.allowed, false)
+  assert.equal(wrong.allowed === false && wrong.reason, 'no-declared-transition')
+  assert.match(
+    wrong.allowed === false ? wrong.detail : '',
+    /no declared transition moves status from "verified" to "candidate"/,
+  )
+  assert.match(
+    wrong.allowed === false ? wrong.detail : '',
+    /from "verified": retire→retired/,
+    'and it lists what could have been done instead',
+  )
+})
+
+test('a state nothing leaves at all says so, which is what an undecided domain relies on', () => {
+  const { lifecycle } = declaration(VALID)
+  const stuck = authoriseTransition(lifecycle as LifecycleDecl, 'retired', 'candidate', 'curator')
+
+  assert.equal(stuck.allowed, false)
+  assert.match(stuck.allowed === false ? stuck.detail : '', /nothing may leave "retired"/)
+})

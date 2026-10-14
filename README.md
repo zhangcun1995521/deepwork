@@ -454,6 +454,14 @@ name a second field and value the verdict has to carry (`scope: { field: gate, v
 so one signature opens one gate. It is declared per requirement rather than solved by giving each
 gate its own verdict type, because that would mean granting a signer once per gate.
 
+**A lifecycle is a graph, not a ladder.** The staged example reads as a road forward, and a
+sequence of gates is how it is usually drawn — but nothing about the mechanism requires states to
+be visited once, in order, or at all. A review that sends work back is a cycle, and it is declared
+the way any other move is: `revise: { from: [in_review], to: draft, by: [reviewer] }`, beside the
+`submit` that got it there. What the declaration buys is not an order but a set of permitted moves,
+each checked against who is making it — so "the case came back for rewriting" is a transition
+somebody declared, and one nobody declared is refused with the state it could not leave.
+
 ## Vouched-for experience, as skills
 
 A skill is know-how — how to do a thing. The ontology is know-*what*. The two meet at one
