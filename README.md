@@ -583,10 +583,14 @@ competition with the rules it describes.
 
 Three decisions worth naming, since each is a place the obvious thing is wrong:
 
-- **The section is built at load**, from the graph already in hand rather than re-read per turn.
-  What is injected therefore cannot drift from what the read tools return, and a domain file that
-  becomes unreadable mid-session cannot fail prompt assembly. The cost is the catalog's cost:
-  promotion waits for a restart.
+- **The section is recomputed for every assembly**, by re-reading the domain, because the situation
+  is derived from a state and a state is the one part of this that moves while a session runs. A
+  promotion, a case going to review, an edit — each reaches the prompt on the next model step rather
+  than the next process. The catalog keeps the older behaviour, and for the older reason: what may
+  be loaded is not urgent, and re-registering a hundred skills per turn would buy nothing.
+- **A domain that becomes unreadable mid-session loses its rules and says so.** Re-read per
+  assembly, that is a case to handle rather than a theory: the text is produced inside a try, and
+  the failure renders as a section that names it instead of taking every turn down with it.
 - **`interpolate: false`**, because the host's `{{variable}}` references are strict and this text
   comes from domain data. A rule that happened to contain a brace pair would otherwise take every
   turn down with it. Not hypothetical: the check that pins it is a rule whose body contains

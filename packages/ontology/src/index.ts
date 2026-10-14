@@ -21,7 +21,7 @@ import {
 import { writeGuard } from './govern/guard.ts'
 import { GOVERNANCE_SERVICE, createGovernanceRegistry } from './govern/access.ts'
 import type { RoleRule } from './govern/permission.ts'
-import { parseSituation, renderSection, resolveActive, selectRules } from './inject.ts'
+import { parseSituation, renderSection, resolveActive, selectRules, type Selection } from './inject.ts'
 import { experienceSkills, type ExperienceSkill } from './skills.ts'
 import { registerOntologyTools, type ToolRegistry } from './tools/register.ts'
 import { domainSnapshot } from './web.ts'
@@ -136,7 +136,14 @@ export interface SystemPromptSurface {
     section(section: {
       name: string
       order: number
-      text: string
+      /**
+       * Static text, or a provider evaluated for each assembly.
+       *
+       * A function is what makes the section follow the world: an assembly happens per model step,
+       * so a provider re-reads the domain and recomputes what applies rather than repeating what
+       * applied when the process started.
+       */
+      text: string | (() => string)
       /** False keeps the text literal, which matters when it comes from domain data. */
       interpolate?: boolean
     }): () => void
@@ -323,10 +330,11 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
   // the same reason: a profile may have no skill registry, and everything above has to work
   // identically without one.
   //
-  // Registered at load, which is a real limit worth stating: experience promoted *during* this
-  // process is not in the catalog until it restarts. Promotion is the rare event — an agent
-  // verifies what it learned, a human signs off — so the alternative, re-registering the whole
-  // catalog on every write, would pay for itself only in the case that never happens.
+  // Registered at load, and the one thing here that is not recomputed per assembly. That is a
+  // decision rather than an oversight: what a catalog offers is not urgent — the agent reaches for
+  // it when it wants to — while what is injected is, and a rule that arrived this turn has to be in
+  // front of the model on the next one. Ninety skills re-registered per turn would buy the first
+  // property at the price of the second's cost, for nothing.
   const { skills, notes: skillNotes } = experienceSkills(graph)
   for (const note of skillNotes) warn(ctx, note)
   if (skills.length > 0) {
@@ -359,39 +367,52 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
   // read tools return, and a domain file that becomes unreadable mid-session cannot fail prompt
   // assembly. The cost is that a rule promoted during this process waits for the next boot, which
   // is the limit the catalog has too.
-  const deliverablesResolved = resolveActive(graph, config.active ?? '')
-  if (deliverablesResolved.note !== undefined) {
-    warn(ctx, `the session named "${config.active ?? ''}" as what it is working on, but ${deliverablesResolved.note}`)
+  // The situation and the selection, computed from the domain **as it is right now**.
+  //
+  // This runs once at boot and again before every assembly, and the second one is the point. The
+  // situation is derived from an object's state, and a state is the one part of this that moves
+  // during a session: work advances, a case goes to review, and what the agent must follow changes
+  // with it. Computing it at boot only would mean the world could change and the prompt would not,
+  // which is the exact failure the derived situation exists to avoid.
+  //
+  // The cost is honest and small: `loadGraph` measures at 16ms against a few hundred instances, and
+  // an assembly happens per model step. The re-read is also what makes a mid-session edit visible
+  // without a restart.
+  const compute = (): { selection: Selection; trouble?: string } => {
+    const graph = loadGraph(ontologyRoot)
+    const resolved = resolveActive(graph, config.active ?? '')
+    const declared = parseSituation(config.situation ?? '')
+    const selection = selectRules(
+      graph,
+      {
+        deliverables: resolved.deliverables,
+        tags: [...new Set([...declared, ...resolved.tags])],
+        ...(resolved.because === undefined ? {} : { because: resolved.because }),
+        ...(resolved.note === undefined ? {} : { trouble: resolved.note }),
+      },
+      config.budget === undefined ? {} : { budget: config.budget },
+    )
+    return { selection, ...(resolved.note === undefined ? {} : { trouble: resolved.note }) }
   }
 
-  // Declared tags first, derived ones after, deduplicated. A deployment may still state a tag the
-  // domain cannot compute — the role half is the obvious one, since a role is who the caller is and
-  // not a fact about the deliverable.
-  const declaredTags = parseSituation(config.situation ?? '')
-  const tags = [...new Set([...declaredTags, ...deliverablesResolved.tags])]
-
-  const selection = selectRules(
-    graph,
-    { deliverables: deliverablesResolved.deliverables, tags },
-    config.budget === undefined ? {} : { budget: config.budget },
-  )
-  // Carried into the section so a computed situation can be checked. A person who typed a tag can
-  // see it in the prompt; a tag derived from an object's state has to bring the state with it, or a
-  // wrong answer is indistinguishable from a right one.
-  if (deliverablesResolved.because !== undefined) selection.because = deliverablesResolved.because
-  for (const tag of selection.unknown) {
+  const first = compute()
+  if (first.trouble !== undefined) {
+    warn(ctx, `the session named "${config.active ?? ''}" as what it is working on, but ${first.trouble}`)
+  }
+  for (const tag of first.selection.unknown) {
     warn(
       ctx,
       `the declared situation tag "${tag}" matches no rule in this domain; it is probably a ` +
         `spelling mistake, and a tag that matches nothing selects nothing`,
     )
   }
+
   // Registered whenever the domain vouches for anything — including when the situation selected
   // none of it. That case is the one a reader most needs told: an empty selection and a mistyped
   // tag are indistinguishable from inside the rule set, and only one of them is a mistake. A
   // plugin that stayed silent when nothing matched would turn the loudest failure into the
   // quietest.
-  if (selection.total > 0) {
+  if (first.selection.total > 0) {
     ctx.inject?.(['systemPrompt'], (prompt: SystemPromptSurface) => {
       prompt.effect?.(
         () =>
@@ -404,11 +425,38 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
             // `{{variable}}` references are strict — an undefined one throws. A rule that happens
             // to contain a brace pair would otherwise take every turn down with it.
             interpolate: false,
-            text: renderSection(selection),
+            // Recomputed per assembly. The one thing that must not fail is the assembly itself, so
+            // a domain that has become unreadable mid-session loses its rules and says so, rather
+            // than taking the agent's every turn down with it.
+            text: () => {
+              try {
+                return renderSection(compute().selection)
+              } catch (error) {
+                return renderSection({
+                  deliverables: [],
+                  tags: [],
+                  rules: [],
+                  total: 0,
+                  matched: 0,
+                  dropped: 0,
+                  unknown: [],
+                  trouble:
+                    `the domain at ${ontologyRoot} could not be re-read ` +
+                    `(${error instanceof Error ? error.message : String(error)}), so the rules it ` +
+                    'vouches for are not shown',
+                })
+              }
+            },
           }),
         'deepwork-ontology: experience injection',
       )
     })
+  } else {
+    warn(
+      ctx,
+      `no rule is vouched for in this domain, so nothing is injected — the domain vouches for ` +
+        `${first.selection.total} rule(s)`,
+    )
   }
 }
 

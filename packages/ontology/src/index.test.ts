@@ -6,7 +6,7 @@
  * mounted reads exactly like a policy that works, right up until someone checks.
  */
 import assert from 'node:assert/strict'
-import { cpSync, mkdtempSync, rmSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
@@ -36,8 +36,12 @@ interface Harness {
   registered: string[]
   mounted?: (call: RuntimeToolCall) => string | undefined
   logs: string[]
-  /** Every prompt section the plugin registered, as `name -> text`. */
+  /** Every prompt section the plugin registered, as evaluated at registration. */
   sections: Map<string, string>
+  /** The same sections as providers, so a test can ask for a fresh assembly. */
+  providers: Map<string, () => string>
+  /** Evaluate a section again, which is what the registry does for each assembly. */
+  readSection(name: string): string
 }
 
 /** A context that records what the plugin does, without a runtime or a domain on disk. */
@@ -47,6 +51,8 @@ function harness(): Harness {
     registered: [],
     logs: [],
     sections: new Map(),
+    providers: new Map(),
+    readSection: (name) => state.providers.get(name)?.() ?? '',
     ctx: undefined as unknown as OntologyContext,
   }
   state.ctx = {
@@ -70,7 +76,13 @@ function harness(): Harness {
       callback({
         systemPrompt: {
           section: (section) => {
-            state.sections.set(section.name, section.text)
+            // Evaluated here, each time, because that is what the registry does: a provider is
+            // called per assembly, and a harness that stored the function itself would pass every
+            // test while the section never followed the world.
+            const provider =
+              typeof section.text === 'function' ? section.text : () => section.text as string
+            state.providers.set(section.name, provider)
+            state.sections.set(section.name, provider())
             return () => {}
           },
           getSectionOrder: () => 0,
@@ -175,4 +187,46 @@ test('a situation selecting nothing still registers, so the mistake is visible',
     h.logs.some((line) => line.includes('phase:revenge')),
     'and the boot log names the tag, for whoever has to fix it',
   )
+})
+
+test('the section is recomputed for each assembly, so a promotion arrives without a restart', (t) => {
+  // The claim this pins is the reason the section takes a provider rather than a string. A session
+  // names an object; the object's state supplies the tags; and both the rules and the state can
+  // move while the agent is working. Reading the same registration twice, with a write in between,
+  // is what a per-assembly evaluation looks like from the outside.
+  //
+  // The fixture maps the two states onto tags the example's rules already use, so that the change
+  // is visible in what applies and not only in the sentence describing it.
+  const root = mkdtempSync(join(tmpdir(), 'deepwork-live-'))
+  cpSync(LESSONS, root, { recursive: true })
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const schema = join(root, 'schema.yaml')
+  writeFileSync(
+    schema,
+    readFileSync(schema, 'utf-8').replace(
+      /^version:/m,
+      'situation:\n  state_tags:\n    Lesson:\n' +
+        '      candidate: artifact:integration_client\n      verified: artifact:pull_request\n\nversion:',
+    ),
+  )
+
+  // LES-002 arrives as a candidate: named by the session, mapped to a tag, and not a rule yet.
+  const h = harness()
+  apply(h.ctx, { ontologyRoot: root, active: 'LES-002', auditLog: join(root, 'audit.jsonl') })
+  const before = h.readSection('deepwork:experience')
+
+  assert.match(before, /Lesson LES-002 is candidate, which this domain maps to artifact:integration_client/)
+  assert.match(before, /0 of the 1 vouched-for rules/, 'one rule is vouched for, and none applies')
+
+  // Somebody upholds it. Nothing is restarted, and nothing is re-registered.
+  const lesson = join(root, 'objects', 'lessons', 'LES-002.yaml')
+  writeFileSync(lesson, readFileSync(lesson, 'utf-8').replace(/^status: candidate$/m, 'status: verified'))
+
+  const after = h.readSection('deepwork:experience')
+
+  assert.match(after, /Lesson LES-002 is verified, which this domain maps to artifact:pull_request/)
+  assert.match(after, /1 of the 2 vouched-for rules/, 'a rule that was not vouched for now is')
+  assert.match(after, /\*\*LES-001\*\* —/, 'and it is the one whose tag the new state selects')
+  assert.doesNotMatch(after, /is candidate, which this domain maps/)
+  assert.notEqual(after, before, 'the two reads are genuinely different text')
 })

@@ -14,11 +14,9 @@
  * A deployment that states no situation is not left with nothing: it gets every vouched-for rule,
  * which is the safe direction to be wrong in.
  *
- * Two limits, recorded rather than papered over. The listing is built once, at load, so a rule
- * promoted mid-process is not in it until the next boot — the same limit the skill catalog has,
- * for the same reason (promotion is the rare event). And a situation tag that matches nothing is
- * reported rather than silently yielding an empty section, because a typo in a deployment's
- * config must not be able to delete the rules it was meant to select.
+ * One limit, recorded rather than papered over: a situation tag that matches nothing is reported
+ * rather than silently yielding an empty section, because a typo in a deployment's config must not
+ * be able to delete the rules it was meant to select.
  *
  * @module @zhangcun123/ontology/inject
  */
@@ -84,6 +82,8 @@ export interface Selection {
    * record of that state unless it is written down beside it.
    */
   because?: string
+  /** Something about the derived situation that the reader should be told. Printed, not judged. */
+  trouble?: string
   /** Rules to inject, grouped and in a stable order. */
   rules: InjectedRule[]
   /** Every vouched-for rule, whatever the situation. The denominator of "how many of how many". */
@@ -163,6 +163,14 @@ export interface Situation {
   tags: string[]
   /** Where those tags came from, when they were computed rather than declared. Printed, not judged. */
   because?: string
+  /**
+   * Something about this situation that the reader should not have to infer.
+   *
+   * Carried into the section rather than only warned about at boot, because the situation is now
+   * recomputed per assembly: an object that was renamed, or a domain that became unreadable, changes
+   * the answer mid-session, and a change nobody is told about is the same as a wrong answer.
+   */
+  trouble?: string
 }
 
 /** What resolving a named thing produced, and what to tell whoever named it. */
@@ -415,6 +423,7 @@ export function selectRules(
     deliverables: [...situation.deliverables],
     tags: [...situation.tags],
     ...(situation.because === undefined ? {} : { because: situation.because }),
+    ...(situation.trouble === undefined ? {} : { trouble: situation.trouble }),
     rules: kept,
     total: vouched.length,
     matched,
@@ -479,6 +488,14 @@ export function renderSection(selection: Selection): string {
       `list at ${selection.budget ?? 0} characters, and the least specific rules are the ones left`,
       'out. They are still in your skill catalog, loadable by name — nothing has been taken away',
       'from you, only moved out of the part you cannot miss.',
+    )
+  }
+
+  if (selection.trouble !== undefined) {
+    lines.push(
+      '',
+      `Note for whoever configured this deployment: ${selection.trouble}. Treat the rules below as`,
+      'possibly incomplete, and tell the user rather than filling the gap yourself.',
     )
   }
 
