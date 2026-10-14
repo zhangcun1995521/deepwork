@@ -466,7 +466,21 @@ export function selectRules(
  * @param selection - What {@link selectRules} returned.
  */
 export function renderSection(selection: Selection): string {
+  // Delimited, so a prompt can refer to this block by name.
+  //
+  // Nothing in the platform needs the tag — a reader finds the heading. What needs it is the other
+  // half of what an agent is given: a role prompt has to be able to say "every rule in <patterns>
+  // applies" without quoting an English heading that this repository may reword. The host draws the
+  // same line for skill bodies (`<skill_content>`), and for the same reason: text assembled from
+  // outside should have a stable name to be referred to by.
+  //
+  // `patterns` and not `test_patterns`: the word is the domain's own — its rules are `TestPattern`
+  // instances with `pattern_id`s — but the tag lives in the platform, and a platform that names one
+  // business domain in its markup is a platform that has to be reissued for the next one. A domain
+  // whose rules are called something else reads the tag as "the block of reusable rules", which is
+  // what it is.
   const lines: string[] = [
+    '<patterns>',
     '## Rules this domain vouches for (these are requirements, not suggestions)',
     '',
     'Each entry below has been confirmed by a person and carries an id you can cite. They are',

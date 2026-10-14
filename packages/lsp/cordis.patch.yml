@@ -1,0 +1,33 @@
+# The composition layer this bundle contributes.
+#
+# Declaring `dsh.bundle.patch` is what turns this package from an inert dependency into a profile
+# layer, the same way the ontology and test-runner plugins do it. The row names the package by its
+# bare name so the profile's own node_modules resolves it.
+
+- insert:
+    - id: deepwork-lsp
+      name: '@zhangcun123/lsp'
+      config:
+        # Every `!!js` expression is a single-quoted scalar on one line, and that is not cosmetic.
+        # YAML reads a bare scalar containing ` : ` as a mapping, and a folded one arrives as an
+        # unresolved string; either way the row fails to load and the bundle is installed and inert
+        # with nothing said. The test-runner row records the run that found this.
+        #
+        # The language servers to run, as a JSON object naming one entry per server:
+        #
+        #   {"ts":{"command":"typescript-language-server","args":["--stdio"],
+        #          "extensionToLanguage":{".ts":"typescript",".tsx":"typescriptreact"}}}
+        #
+        # Empty means no language server is configured, so no tool is registered: an unconfigured
+        # deployment reads as unconfigured rather than as one whose every call fails. The command
+        # is a deployment fact and never a model argument.
+        servers: !!js 'JSON.parse(process.env.DEEPWORK_LSP_SERVERS ?? "{}")'
+        # Largest number of locations rendered before an omission marker, and the largest complete
+        # rendered result in characters, truncation notice included. A navigation query can answer
+        # with hundreds of sites, and an uncapped answer crowds out the task it was asked for.
+        maxLocations: !!js 'process.env.DEEPWORK_LSP_MAX_LOCATIONS ? Number(process.env.DEEPWORK_LSP_MAX_LOCATIONS) : 100'
+        maxResultChars: !!js 'process.env.DEEPWORK_LSP_MAX_RESULT_CHARS ? Number(process.env.DEEPWORK_LSP_MAX_RESULT_CHARS) : 16000'
+        # Milliseconds before a queued query is given up on, covering the complete open, query and
+        # close lifecycle. A language server that is still indexing answers late or not at all, and
+        # a call that never returns takes the turn with it.
+        timeoutMs: !!js 'process.env.DEEPWORK_LSP_TIMEOUT ? Number(process.env.DEEPWORK_LSP_TIMEOUT) : 60000'

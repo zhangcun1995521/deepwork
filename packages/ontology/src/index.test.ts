@@ -153,11 +153,16 @@ test('a shell redirect outside the domain is refused once the guard is mounted',
 const LESSONS = resolve(fileURLToPath(import.meta.url), '../../examples/lessons')
 
 /** Mount the lessons example, which is the smallest domain that vouches for anything. */
-function mountLessons(situation: string): Harness {
+function mountLessons(situation: string, extra: Record<string, unknown> = {}): Harness {
   const h = harness()
   h.root = mkdtempSync(join(tmpdir(), 'deepwork-index-lessons-'))
   cpSync(LESSONS, h.root, { recursive: true })
-  apply(h.ctx, { ontologyRoot: h.root, situation, auditLog: join(h.root, 'audit.jsonl') })
+  apply(h.ctx, {
+    ontologyRoot: h.root,
+    situation,
+    auditLog: join(h.root, 'audit.jsonl'),
+    ...extra,
+  } as never)
   return h
 }
 
@@ -229,4 +234,72 @@ test('the section is recomputed for each assembly, so a promotion arrives withou
   assert.match(after, /\*\*LES-001\*\* —/, 'and it is the one whose tag the new state selects')
   assert.doesNotMatch(after, /is candidate, which this domain maps/)
   assert.notEqual(after, before, 'the two reads are genuinely different text')
+})
+
+test('a mode that states its role puts it in the situation without anyone typing the tag', (t) => {
+  // The role was a tag somebody had to remember, or an id-prefix map for the write path. Stating it
+  // once on the mount makes it available to the thing it actually describes: which rules this agent
+  // is here to follow.
+  const withRole = mountLessons('', { role: 'curator' })
+  assert.match(withRole.readSection('deepwork:experience'), /role:curator/)
+
+  const without = mountLessons('')
+  assert.doesNotMatch(without.readSection('deepwork:experience'), /role:/)
+})
+
+test('a mode mounts the prompt its role names, as its own section', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'deepwork-prompt-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const prompt = join(dir, 'curator.txt')
+  writeFileSync(prompt, 'You keep the lesson base honest.\n\nYou do not write lessons yourself.\n')
+
+  const h = mountLessons('', { role: 'curator', prompts: { curator: prompt } })
+
+  assert.equal(
+    h.readSection('deepwork:role-prompt'),
+    'You keep the lesson base honest.\n\nYou do not write lessons yourself.\n',
+    'mounted verbatim — a prompt is prose, not a template',
+  )
+  // And the rules are still there, ranked after it.
+  assert.match(h.readSection('deepwork:experience'), /Rules this domain vouches for/)
+})
+
+test('a prompt naming another role is not the one mounted', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'deepwork-prompt-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  writeFileSync(join(dir, 'curator.txt'), 'curator prompt\n')
+  writeFileSync(join(dir, 'contributor.txt'), 'contributor prompt\n')
+
+  const h = mountLessons('', {
+    role: 'contributor',
+    prompts: { curator: join(dir, 'curator.txt'), contributor: join(dir, 'contributor.txt') },
+  })
+
+  assert.equal(h.readSection('deepwork:role-prompt'), 'contributor prompt\n')
+})
+
+test('a prompt file that is not there is reported, and the mode still comes up', (t) => {
+  // Refusing to boot over a missing prompt would take the tools down with it, and a prompt is the
+  // one part of a mode whose absence degrades manner rather than capability.
+  const h = mountLessons('', { role: 'curator', prompts: { curator: 'D:/nowhere/absent.txt' } })
+
+  assert.equal(h.sections.has('deepwork:role-prompt'), false)
+  assert.match(h.readSection('deepwork:experience'), /Rules this domain vouches for/)
+  assert.ok(
+    h.logs.some((line) => line.includes('could not be read') && line.includes('curator')),
+    'and it says which role and which file',
+  )
+})
+
+test('a role with no prompt entry, and an empty prompt, are both said out loud', (t) => {
+  const silent = mountLessons('', { role: 'curator' })
+  assert.ok(silent.logs.some((line) => line.includes('declares no prompts entry')))
+
+  const dir = mkdtempSync(join(tmpdir(), 'deepwork-prompt-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const empty = join(dir, 'curator.txt')
+  writeFileSync(empty, '   \n')
+  const blank = mountLessons('', { role: 'curator', prompts: { curator: empty } })
+  assert.equal(blank.sections.has('deepwork:role-prompt'), false)
+  assert.ok(blank.logs.some((line) => line.includes('is empty')))
 })

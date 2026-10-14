@@ -1,0 +1,13 @@
+# The composition layer this bundle contributes.
+#
+# Declaring `dsh.bundle.patch` is what turns this package from an inert dependency into a profile
+# layer, the same way the probe and ontology packages do it. The row names the package by its bare
+# name so the profile's own node_modules resolves it.
+#
+# There is no `config:` block. Everything this tool needs to decide is either the caller's own
+# session (from `exec.agent`) or the target argument, and a deployment-varying bound would be a
+# bound this tool does not have: a lineage is returned complete or it is refused.
+
+- insert:
+    - id: deepwork-session-query
+      name: '@zhangcun123/session-query'
