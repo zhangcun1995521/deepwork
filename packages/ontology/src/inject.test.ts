@@ -734,3 +734,71 @@ test('a situation that states only a role marks nothing, and gives the reason ra
   assert.match(rendered, /^- \*\*LES-001\*\*/m)
   assert.match(rendered, /^- \*\*LES-006\*\*/m)
 })
+
+test('the numbers and the index the block states are read back out of it, not asserted beside it', (t) => {
+  // The block makes four claims about its own lines: how many rules this role may follow, how many
+  // were left out for declaring another role, how many are marked, and which ids those are in order.
+  // Each one can drift from the lines below it, and a reader inside the prompt cannot catch that — a
+  // model is given the text, not the selection behind it. A projection that disagrees with its own
+  // detail is the failure this repository keeps refusing one level down (a rule silently absent), so
+  // the claims are parsed back out of the rendered text and compared with what it actually contains.
+  //
+  // It is also the check a model cannot make for itself. Asked to count the rules by kind, one
+  // reported 46 at the top and then listed 43, two of its own groups contradicting their own
+  // headings. Nothing here reads why a rule is marked: these are set and sum comparisons.
+  const withAnotherRole = (): string => {
+    const root = roleAndProductRules(t)
+    writeFileSync(
+      join(root, 'objects', 'lessons', 'LES-007.yaml'),
+      [
+        'lesson_id: LES-007',
+        'status: verified',
+        'kind: tooling',
+        'rule: >-',
+        '  Written for whoever reviews, and binding on nobody who executes.',
+        'applies_to: [role:reviewer]',
+        'source_kind: review',
+        'source_ref: REV-2026-0701',
+        'applied_count: 0',
+        '',
+      ].join('\n'),
+    )
+    return root
+  }
+
+  const check = (rendered: string, expectedExcluded: number): void => {
+    const stated = (pattern: RegExp, group = 1): string => {
+      const found = rendered.match(pattern)
+      assert.ok(found, `the block must state this, and did not: ${String(pattern)}`)
+      return found[group]
+    }
+    const available = Number(stated(/(\d+) of the (\d+) vouched-for rules are available to this role/))
+    const total = Number(stated(/(\d+) of the (\d+) vouched-for rules are available to this role/, 2))
+    // Nothing withheld takes the other sentence, because a count of zero reads as a shortfall.
+    const excluded =
+      expectedExcluded === 0
+        ? (assert.ok(rendered.includes('none is left out for declaring a different one')), 0)
+        : Number(stated(/the other (\d+) declare a different role/))
+
+    const markedCount = Number(stated(/(\d+) of them are marked for this situation/))
+    const index = stated(/Marked here, in the order they are listed below: (.+)\./).split(', ')
+    const ids = (prefix: string): string[] =>
+      [...rendered.matchAll(new RegExp(`^${prefix}- \\*\\*([^*]+)\\*\\*`, 'gm'))].map((m) => m[1])
+    const entries = ids('(?:▸ )?')
+    const markers = ids('▸ ')
+
+    assert.equal(excluded, expectedExcluded, 'the fixture withheld what it was built to withhold')
+    assert.equal(entries.length, available, 'the stated count is the number of lines below it')
+    assert.equal(available + excluded, total, 'and the two halves add up to the whole it names')
+    assert.equal(markers.length, markedCount, 'the stated marker count is the number of markers')
+    assert.deepEqual(index, markers, 'the index is the marked lines, in the order they appear')
+    assert.ok(
+      markers.length > 0 && markers.length < entries.length,
+      'this fixture has to be one where the listed and the marked differ, or none of this is tested',
+    )
+  }
+
+  const situation = { deliverables: ['DLV-GADGET'], tags: ['role:executor', 'stage:review'] }
+  check(renderSection(selectRules(loadGraph(withAnotherRole()), situation)), 1)
+  check(renderSection(selectRules(loadGraph(roleAndProductRules(t)), situation)), 0)
+})
