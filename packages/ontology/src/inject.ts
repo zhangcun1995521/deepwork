@@ -8,7 +8,7 @@
  * rule it may miss, and "the codebase must use `Decimal` for money" is not advice.
  *
  * What makes it more than a hard-coded block is `applies_to`. The domain tags each rule with the
- * situations it governs — `artifact:handover`, `stage:review`, `role:checker` — and
+ * situations it governs — `artifact:handover`, `stage:review`, `role:analyst` — and
  * the deployment states which situation it is in. So the answer to "what must I follow" is
  * computed from the world rather than chosen by the model, and it changes when the world does.
  * A deployment that states no situation is not left with nothing: it gets every vouched-for rule,
@@ -128,7 +128,7 @@ export interface SelectOptions {
   budget?: number
 }
 
-/** The dimension of a tag: `stage:review` is a `phase`. */
+/** The dimension of a tag: `stage:review` is a `stage`. */
 function dimensionOf(tag: string): string {
   const at = tag.indexOf(':')
   return at === -1 ? tag : tag.slice(0, at)
@@ -221,7 +221,20 @@ export function resolveActive(graph: OntologyGraph, activeId: string): ActiveRes
   const id = activeId.trim()
   if (id.length === 0) return { deliverables: [], tags: [] }
 
-  if (graph.byId.get(`Deliverable:${id}`) !== undefined) {
+  // Which type carries "what am I making" is the domain's to say, so it is read rather than assumed.
+  // A literal here would make `situation.product_type` a setting that only works for a domain that
+  // happens to agree with the engine's guessed name — and would disagree quietly, because the two
+  // halves of this fail differently: `selectRules` honours the declaration while this function
+  // would not. Found by building an example whose product type is named something else and watching
+  // half the mechanism work.
+  //
+  // A domain may declare no product type at all, and that is a choice rather than a mistake: the
+  // product gate stays open, and the state tags below still work. So its absence skips the product
+  // half and reports nothing — the two declarations are independent, and conflating them would
+  // quietly disable one to protest the other.
+  const product = graph.schema.situationProduct
+
+  if (product !== undefined && graph.byId.get(`${product}:${id}`) !== undefined) {
     // A product with no object behind it has no state, so it contributes no tag. Said rather than
     // guessed: inventing a stage for it would be the person-typed guess this replaces.
     return { deliverables: [id], tags: [] }
@@ -238,9 +251,12 @@ export function resolveActive(graph: OntologyGraph, activeId: string): ActiveRes
   const state = stateOf(graph, named)
   const tag = state === undefined ? undefined : graph.schema.situationStateTags?.get(named.type)?.get(state)
 
-  const deliverables = (graph.byType.get('Deliverable') ?? [])
-    .filter((deliverable) => deliverable.data.produced_as === named.type)
-    .map((deliverable) => deliverable.id)
+  const deliverables =
+    product === undefined
+      ? []
+      : (graph.byType.get(product) ?? [])
+          .filter((deliverable) => deliverable.data.produced_as === named.type)
+          .map((deliverable) => deliverable.id)
 
   const resolved: ActiveResolution = {
     deliverables,
@@ -254,12 +270,15 @@ export function resolveActive(graph: OntologyGraph, activeId: string): ActiveRes
         }),
   }
 
-  if (deliverables.length === 0) {
+  // Only worth saying when the domain has products to have missed. A domain that declares no product
+  // type has answered this question by not asking it, and a note telling it to use a product id would
+  // be advice about machinery it deliberately does not have.
+  if (product !== undefined && deliverables.length === 0) {
     return {
       ...resolved,
       note:
-        `"${id}" is a ${named.type}, and no product in this domain says it is produced as one — ` +
-        'give the session a product id from objects/deliverables instead',
+        `"${id}" is a ${named.type}, and no ${product} in this domain says it is produced as one — ` +
+        `give the session a ${product} id instead`,
     }
   }
   return resolved

@@ -1,0 +1,7 @@
+practice_id: PRA-009
+status: candidate
+kind: handover
+rule: >-
+  A test that fails twice on its own is quarantined within a day; a suite that fails on its own
+  stops being read.
+applies_to: stage:accepted

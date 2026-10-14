@@ -8,6 +8,9 @@
  *
  * `lessons` carries the whole experience loop in one place: a candidate nobody has upheld, a
  * verdict from somebody else, and a read that returns only what was vouched for.
+ *
+ * `agreed-practice` carries the half a skill catalog cannot: the same vouched-for set written into
+ * the agent's prompt, selected by the state of the work item the session names.
  */
 import assert from 'node:assert/strict'
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -16,13 +19,14 @@ import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { loadGraph } from './engine/graph.ts'
+import { loadGraph, type OntologyGraph } from './engine/graph.ts'
 import type { AuditEntry } from './govern/audit.ts'
 import type { RoleRule } from './govern/permission.ts'
 import { deriveActionTools } from './tools/actions.ts'
 import type { DerivedToolSpec } from './tools/derive.ts'
 import { deriveTools } from './tools/derive.ts'
 import { deriveWriteTools } from './tools/write.ts'
+import { resolveActive, renderSection, selectRules, type Selection } from './inject.ts'
 import { experienceSkills } from './skills.ts'
 
 const example = (name: string): string =>
@@ -407,4 +411,180 @@ test('a role the move names may move without being able to author', (t) => {
     ['role-not-permitted'],
     'and only the authoring attempt was denied',
   )
+})
+
+// ── the same rules, written into the prompt ─────────────────────────────────────
+//
+// `agreed-practice` is the domain that exercises the half a skill catalog cannot: the vouched-for
+// set is written into the prompt, and which part of it lands there is computed from the state of
+// the work item the session names. What the example's README asserts about that is pinned here,
+// because an example that quietly stopped showing the mechanism is worse than no example — the
+// README still claims it.
+
+const AUTHOR: RoleRule = { prefix: 'author-', role: 'author' }
+const REVIEWER: RoleRule = { prefix: 'reviewer-', role: 'reviewer' }
+
+const practiceSurface = (roles: readonly RoleRule[], t: TestContext) =>
+  surfaceOf('agreed-practice', roles, t)
+
+/**
+ * What naming one object gets a deployment, computed the way the plugin computes it.
+ *
+ * Both halves matter and neither is chosen here: the product comes from the kind of thing named,
+ * and the tag from the state that thing is in.
+ */
+function selectionFor(graph: OntologyGraph, active: string): Selection {
+  const resolved = resolveActive(graph, active)
+  return selectRules(graph, {
+    deliverables: resolved.deliverables,
+    tags: resolved.tags,
+    ...(resolved.because === undefined ? {} : { because: resolved.because }),
+    ...(resolved.note === undefined ? {} : { trouble: resolved.note }),
+  })
+}
+
+const ruleIds = (selection: Selection): string[] => selection.rules.map((rule) => rule.id)
+
+test('naming a work item selects the practices its stage calls for, and others once it moves', (t) => {
+  const { graph, tools } = practiceSurface([AUTHOR, REVIEWER], t)
+
+  // Two work items at two stages, and neither set is the whole domain — which is the only thing
+  // that makes computing the selection worth doing at all.
+  const drafting = selectionFor(graph, 'WI-1043')
+  assert.deepEqual(drafting.tags, ['stage:drafting'])
+  assert.deepEqual(ruleIds(drafting), ['PRA-001', 'PRA-002'])
+  assert.equal(drafting.total, 6, 'the denominator is what the domain vouches for, not what matched')
+
+  const reviewing = selectionFor(graph, 'WI-1042')
+  assert.deepEqual(reviewing.tags, ['stage:review'])
+  assert.deepEqual(ruleIds(reviewing), ['PRA-003', 'PRA-004', 'PRA-005'])
+  // Nobody typed the tag. It was read off the object, and the section says what it read, because a
+  // computed situation has no other way to be checked.
+  assert.match(
+    reviewing.because ?? '',
+    /WorkItem WI-1042 is in_review, which this domain maps to stage:review/,
+  )
+
+  // The same item answers differently once it moves. This is the cycle turning, and the rules the
+  // prompt carries turn with it.
+  run(
+    tool(tools, 'ontology_write'),
+    { type: 'WorkItem', id: 'WI-1043', data: { stage: 'in_review' } },
+    'author-session-1',
+  )
+  const moved = selectionFor(graph, 'WI-1043')
+  assert.deepEqual(moved.tags, ['stage:review'])
+  assert.deepEqual(ruleIds(moved), ['PRA-003', 'PRA-004', 'PRA-005'])
+})
+
+test('a practice nobody has agreed to is in neither surface, and is not counted as vouched for', (t) => {
+  const { graph } = practiceSurface([], t)
+
+  const catalog = experienceSkills(graph).skills.map((skill) => skill.name)
+  assert.equal(catalog.length, 6)
+  assert.ok(catalog.includes('practice-pra-001'), 'an agreed practice is loadable')
+  assert.equal(catalog.includes('practice-pra-007'), false, 'and a candidate is not')
+
+  // PRA-007 is a candidate written for exactly this situation. Had it been agreed it would be
+  // selected here, so its absence is the lifecycle's doing rather than a routing accident.
+  const selection = selectionFor(graph, 'WI-1043')
+  const rendered = renderSection(selection)
+  assert.match(rendered, /PRA-001/)
+  assert.doesNotMatch(rendered, /PRA-007/)
+  assert.equal(selection.total, 6, 'a candidate is not in the denominator either')
+  assert.equal(selection.matched, 2)
+
+  // The read tools draw the same line, from the same declaration — the catalog, the listing and a
+  // read are one answer asked from three directions.
+  const found = run(tool(deriveTools(graph).tools, 'ontology_find'), { type: 'Practice' }, 'anonymous')
+  assert.equal(found.returned, 6)
+  assert.equal(found.excludedByState, 3)
+})
+
+test('the reviewer may send work back and may not rewrite it, and the author the other way round', (t) => {
+  const { graph, entries, tools } = practiceSurface([AUTHOR, REVIEWER], t)
+  const write = tool(tools, 'ontology_write')
+
+  // The author may not make the return move: the transition names the reviewer and only the
+  // reviewer, and a write carrying nothing but the lifecycle field is authorised by the move.
+  assert.throws(
+    () =>
+      run(
+        write,
+        { type: 'WorkItem', id: 'WI-1042', data: { stage: 'draft' } },
+        'author-session-1',
+      ),
+    /write denied \(transition-not-permitted\)/,
+  )
+  assert.match(entries.at(-1)?.detail ?? '', /requires one of \[reviewer\]/)
+  assert.equal(graph.byId.get('WorkItem:WI-1042')?.data.stage, 'in_review')
+
+  // The reviewer makes it while appearing in `written_by` nowhere — the case that was declared,
+  // valid and dead until a pure move stopped being asked to be authorship.
+  run(write, { type: 'WorkItem', id: 'WI-1042', data: { stage: 'draft' } }, 'reviewer-session-1')
+  assert.equal(graph.byId.get('WorkItem:WI-1042')?.data.stage, 'draft')
+
+  // Sending it back is not rewriting it, and the same absence from `written_by` is what says so.
+  assert.throws(
+    () =>
+      run(
+        write,
+        { type: 'WorkItem', id: 'WI-1042', data: { title: 'Rewritten in review.' } },
+        'reviewer-session-1',
+      ),
+    /write denied \(role-not-permitted\)/,
+  )
+  assert.equal(graph.byId.get('WorkItem:WI-1042')?.data.title, 'Rate-limit the webhook fan-out')
+
+  // The cycle turns: the author submits it again and it is back where it started.
+  run(write, { type: 'WorkItem', id: 'WI-1042', data: { stage: 'in_review' } }, 'author-session-1')
+  assert.equal(graph.byId.get('WorkItem:WI-1042')?.data.stage, 'in_review')
+  assert.deepEqual(
+    entries.filter((entry) => entry.outcome === 'denied').map((entry) => entry.reason),
+    ['transition-not-permitted', 'role-not-permitted'],
+    'and those were the only two refusals',
+  )
+})
+
+test('naming a work item that does not exist is reported, not quietly turned into every rule', (t) => {
+  const { graph } = practiceSurface([], t)
+
+  const resolved = resolveActive(graph, 'WI-4040')
+  assert.deepEqual(resolved.deliverables, [])
+  assert.deepEqual(resolved.tags, [])
+  assert.match(resolved.note ?? '', /nothing in this domain is identified as "WI-4040"/)
+
+  // An id nothing answers to states no situation, and an unstated situation is every vouched-for
+  // rule — that is the safe direction and it is deliberate. What must not happen is silence: the
+  // report is the whole safeguard, so it has to reach the section the model reads.
+  const selection = selectionFor(graph, 'WI-4040')
+  assert.equal(selection.matched, selection.total, 'an unstated situation is every vouched-for rule')
+  const rendered = renderSection(selection)
+  assert.match(rendered, /Note for whoever configured this deployment/)
+  assert.match(rendered, /nothing in this domain is identified as "WI-4040"/)
+})
+
+test('which practices govern a deliverable is a query in both directions', (t) => {
+  const { graph } = practiceSurface([], t)
+  const tools = deriveTools(graph).tools
+
+  // Forward, off the relation the domain declared.
+  const forward = run(
+    tool(tools, 'ontology_links'),
+    { relation: 'governs', from: 'PRA-002' },
+    'anonymous',
+  )
+  assert.deepEqual(ids(forward), ['DLV-WI-1042'])
+
+  // Backward, off a declared traversal — the direction that makes "what governs this" a question
+  // the agent can ask rather than a field somebody has to be told about.
+  const back = run(
+    tool(tools, 'ontology_query'),
+    { mode: 'practices_governing', deliverable_id: 'DLV-WI-1043' },
+    'anonymous',
+  )
+  // PRA-007 names this deliverable too and is a candidate. The declaration's `where` is what keeps
+  // an unagreed practice out of an answer about what the team has agreed: a traversal walks the
+  // graph, and the state filter a read would apply is not something a walk gets for free.
+  assert.deepEqual(ids(back), ['PRA-001'])
 })

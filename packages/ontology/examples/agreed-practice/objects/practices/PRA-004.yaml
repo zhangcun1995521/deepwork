@@ -1,0 +1,7 @@
+practice_id: PRA-004
+status: verified
+kind: review
+rule: >-
+  A comment about a race, a lock or an ordering names the interleaving it is about; "this looks
+  unsafe" sends the author hunting and ends in a rewrite of the whole function.
+applies_to: stage:review

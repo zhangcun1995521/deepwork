@@ -354,6 +354,7 @@ domain was put through. `packages/ontology/tests/fixtures/ahead-of-its-data` now
 | `packages/ontology/examples/project-delivery` | a complete synthetic domain to point at |
 | `packages/ontology/examples/lessons` | the experience loop as a domain: a lesson arrives as a `candidate`, reads return only what somebody else upheld, and counting applications is a grant apart from writing one |
 | `packages/ontology/examples/engagement` | a staged delivery: four phases, and the customer's signature scoped to the stage it opens, so the road opens one gate at a time |
+| `packages/ontology/examples/agreed-practice` | the injection as a domain: a practice is a candidate until somebody else agrees to it, and naming a work item selects which agreed practices reach the prompt — the one example that exercises `situation` |
 | `packages/test-runner` | a capability: run a project's tests and read what the run said (see its README) |
 | `packages/probe` | the smallest possible plugin, kept as the smoke test for the plugin route |
 | `tools/fde` | the FDE toolkit: qualify a use case before anything gets built (Python, runs standalone) |

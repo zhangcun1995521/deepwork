@@ -1,0 +1,8 @@
+practice_id: PRA-001
+status: verified
+kind: submission
+rule: >-
+  A change to a response body and the clients that read it ship in the same release; the deploy
+  between the two is the one that breaks.
+applies_to: stage:drafting
+governs: [DLV-WI-1043]

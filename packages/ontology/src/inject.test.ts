@@ -417,3 +417,42 @@ test('the product is named in the section, before the tags derived from it', (t)
 
   assert.match(rendered, /Working on DLV-GADGET; artifact:pull_request\./)
 })
+
+test('the product type is whatever the domain says it is, not a name the engine knows', (t) => {
+  // The engine had `Deliverable` written into two places while `selectRules` read the declared name.
+  // Both halves looked right in isolation and disagreed only for a domain that named its product
+  // type anything else — where the product gate would work and the resolution would not, which is
+  // half a mechanism and no error. Found by building an example that names it something else.
+  const root = productRules(t)
+  const schema = join(root, 'schema.yaml')
+  writeFileSync(
+    schema,
+    readFileSync(schema, 'utf-8')
+      .replace('  product_type: Deliverable', '  product_type: Artifact')
+      .replace(/^  Deliverable:$/m, '  Artifact:')
+      .replace('    to: Deliverable', '    to: Artifact'),
+  )
+
+  const graph = loadGraph(root)
+  assert.equal(graph.schema.situationProduct, 'Artifact', 'the declaration was read')
+  assert.deepEqual(resolveActive(graph, 'W-1'), { deliverables: ['DLV-GADGET'], tags: [] })
+  assert.deepEqual(resolveActive(graph, 'DLV-GADGET'), { deliverables: ['DLV-GADGET'], tags: [] })
+})
+
+test('a domain that declares no product type still gets its state tags', (t) => {
+  // The two declarations are independent, and the first draft of the fix above conflated them: it
+  // returned early when there was no product type, which silently disabled the tags as well. A
+  // domain may use one without the other, so the absence of a product type skips the product half
+  // and reports nothing.
+  const root = productRules(t)
+  const schema = join(root, 'schema.yaml')
+  writeFileSync(
+    schema,
+    readFileSync(schema, 'utf-8').replace('  product_type: Deliverable\n', ''),
+  )
+
+  const resolved = resolveActive(loadGraph(root), 'W-1')
+
+  assert.deepEqual(resolved.deliverables, [], 'no product type, so no product to name')
+  assert.equal(resolved.note, undefined, 'and that is a choice, not something to report')
+})

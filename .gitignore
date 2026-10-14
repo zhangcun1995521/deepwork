@@ -38,3 +38,11 @@ dsh-*.log
 # collecting internal project names and local paths — sanitising it was a losing game, and the
 # file that says so is the file that broke the rule. Not published, so there is nothing to leak.
 PROJECT_STATE.md
+
+# Test output the capability writes. Its default command puts a junit report beside the tests it
+# ran, and a run against the repository itself therefore leaves one here — a report naming the
+# service, carrying every test name, and quoting the source of any test that failed. Found sitting
+# untracked in the tree, one `git add -A` away from being published, which is the same shape of
+# mistake as the run log this file already has a rule for: a tool's own output is not source.
+qa-output*/
+.junit.xml

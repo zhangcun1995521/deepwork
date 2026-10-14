@@ -1,0 +1,8 @@
+practice_id: PRA-002
+status: verified
+kind: submission
+rule: >-
+  A scheduled job states the interval it was sized against and what it does when a run overruns
+  that interval; a job that can overlap will, on the first day the slow path is hit.
+applies_to: stage:drafting
+governs: [DLV-WI-1042]

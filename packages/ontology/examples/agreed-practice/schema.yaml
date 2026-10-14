@@ -1,0 +1,150 @@
+version: "1.0"
+
+# A team's agreed engineering practice, and the work the practice is applied to.
+#
+# Two loops, and this is the smallest shape that holds both. A practice arrives as a `candidate`
+# and becomes loadable only when a role that did not write it moves it to `verified` — so what
+# reaches an agent is what somebody else agreed to. A work item travels the other way as well: it
+# can be submitted for review and sent back for rework, and the two moves belong to different
+# roles.
+#
+# What makes the pair worth reading together is the middle. The `situation` block below names the
+# type that carries "what am I making" and the states that mean which situation tag, so naming a
+# work item is enough to decide which of the agreed practices the plugin writes into the agent's
+# prompt. `WI-1042` and `WI-1043` select different sets because the two are at different stages, and
+# neither number is a tag anybody had to remember.
+#
+# Everything here is synthetic: invented practices, invented products, invented work.
+
+situation:
+  # Which type carries the product half of a situation. A practice's constraints are its declared
+  # relations into this type, so "which practices govern this deliverable" is answered by walking
+  # the graph rather than by reading a field name the engine would have to be told about.
+  product_type: Deliverable
+  # Which state of which type stands for which situation tag. This is what lets the work item
+  # answer "which stage am I at" instead of a person answering it — the half that used to be the
+  # easiest to get wrong in silence, since a wrong tag and a right one look identical in a prompt.
+  state_tags:
+    WorkItem:
+      draft: stage:drafting
+      in_review: stage:review
+      accepted: stage:accepted
+
+object_types:
+  Practice:
+    primary_key: practice_id
+    required_fields: [practice_id, status, rule]
+    file_location: objects/practices/PRA-*.yaml
+    # The author writes practices, and only the author. The reviewer is deliberately absent here:
+    # agreeing to a practice is a move, the move names `reviewer`, and a role that may make a move
+    # need not be able to author the content it moves. That is what stops an author from being the
+    # party that agrees with itself.
+    written_by: [author]
+    lifecycle:
+      field: status
+      initial: candidate
+      default_state: verified
+      states: [candidate, verified]
+      transitions:
+        agree:
+          from: [candidate]
+          to: verified
+          by: [reviewer]
+    fields:
+      practice_id: { type: string, required: true }
+      status: { type: enum, values: [candidate, verified], required: true }
+      # The rule itself. It is the skill's description and its body both, because a practice stated
+      # twice is two statements to keep in step.
+      rule: { type: string, required: true }
+      kind: { type: string }
+      # The situation half of a practice: the same `stage:` tags that `situation.state_tags` maps
+      # the work item's states onto, so a state and a practice's routing tag are one vocabulary.
+      applies_to: { type: string }
+      # Which deliverable this practice was written about, when it was about one. Free to be
+      # absent, and absent is an answer rather than a gap: a practice that names no deliverable is
+      # one the team applies to whatever it is building.
+      governs: { type: array, items: ref, to: Deliverable, description: Deliverables this practice was written about }
+    # The same vouched-for set a read returns, handed to the agent as skills it can load. One
+    # declaration answers both questions: what a reader is shown and what the agent may load are
+    # the same answer, and a practice nobody has agreed to is in neither.
+    skill:
+      description: rule
+      when_to_use: applies_to
+      group_by: kind
+      body: rule
+
+  Deliverable:
+    primary_key: deliverable_id
+    required_fields: [deliverable_id, name, produced_as]
+    file_location: objects/deliverables/DLV-*.yaml
+    written_by: [author]
+    fields:
+      deliverable_id: { type: string, required: true }
+      name: { type: string, required: true }
+      # The object type this product *is*, and one of the few field names the engine reads by
+      # convention rather than off a declaration. A session that names an object rather than a
+      # product is resolved through it: naming a work item brings in the deliverables that a work
+      # item is, which is why the two products below are both in play whichever one is named.
+      produced_as: { type: string, required: true }
+
+  WorkItem:
+    primary_key: item_id
+    required_fields: [item_id, stage, title]
+    file_location: objects/work-items/WI-*.yaml
+    # The reviewer is not here, and that absence is the point. The two moves that turn the cycle
+    # name `author` and `reviewer` respectively, and a write that carries nothing but the lifecycle
+    # field is authorised by the move rather than by this list — so the reviewer can send work back
+    # without being able to rewrite a word of it.
+    written_by: [author]
+    # No `default_state`, deliberately. That field means "a read returns only this state", which is
+    # right for a practice nobody has agreed to yet and wrong for a work item, where it would hide
+    # every item that is not already accepted. Tracking the states and enforcing the moves does not
+    # depend on it.
+    lifecycle:
+      field: stage
+      initial: draft
+      states: [draft, in_review, accepted]
+      transitions:
+        submit_for_review:
+          from: [draft]
+          to: in_review
+          by: [author]
+        # The back edge, which is what makes this a cycle rather than a ladder: work that is not
+        # ready returns to where it can be worked on.
+        send_back:
+          from: [in_review]
+          to: draft
+          by: [reviewer]
+        accept:
+          from: [in_review]
+          to: accepted
+          by: [reviewer]
+    fields:
+      item_id: { type: string, required: true }
+      # A plain string rather than an enum of the same three values: the lifecycle above is already
+      # the one declaration of which stages exist, and a second copy of that set is a second thing
+      # to keep in step.
+      stage: { type: string, required: true }
+      title: { type: string, required: true }
+
+link_types:
+  # Named for what it says rather than for what the engine looks for. The injection finds a
+  # practice's constraints by following its relations into `situation.product_type`, whatever the
+  # relation is called — `constrains` would work identically, and renaming this would cost nothing.
+  governs:
+    from: Practice
+    to: Deliverable
+    description: The deliverable a practice was written about, when it is about one.
+
+functions:
+  practices_governing:
+    description: The practices the team has agreed for a given deliverable.
+    use: traverse
+    relation: governs
+    direction: incoming
+    by: deliverable_id
+    # `where` narrows what the traversal arrives at, and here it carries the one thing a traversal
+    # does not get for free: reads default to the vouched-for state, and a walk of the graph is not
+    # a read. Without this, a candidate a reviewer has not agreed to would come back from a query
+    # that asks which practices govern the work.
+    where: { status: verified }

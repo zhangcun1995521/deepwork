@@ -1,0 +1,7 @@
+practice_id: PRA-006
+status: verified
+kind: handover
+rule: >-
+  An accepted change records the commit and the release it went out in; "done" on its own is the
+  start of the next question, not the end of this one.
+applies_to: stage:accepted

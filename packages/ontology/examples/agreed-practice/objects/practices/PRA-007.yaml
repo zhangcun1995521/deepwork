@@ -1,0 +1,8 @@
+practice_id: PRA-007
+status: candidate
+kind: submission
+rule: >-
+  A feature flag carries the date it is due to be removed; a flag with no removal date outlives
+  the feature it guards.
+applies_to: stage:drafting
+governs: [DLV-WI-1043]

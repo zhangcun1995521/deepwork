@@ -1,0 +1,7 @@
+practice_id: PRA-005
+status: verified
+kind: review
+rule: >-
+  Send a change back with the one thing that must change rather than the ten that could; a review
+  that lists everything wrong is a review that gets rewritten instead of fixed.
+applies_to: stage:review

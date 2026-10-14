@@ -1,0 +1,7 @@
+practice_id: PRA-003
+status: verified
+kind: review
+rule: >-
+  Review the diff, not the description: the description is a claim about the change and the diff
+  is the change.
+applies_to: stage:review

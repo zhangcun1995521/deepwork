@@ -1,0 +1,7 @@
+practice_id: PRA-008
+status: candidate
+kind: review
+rule: >-
+  A reviewer answers within one working day or hands the change to somebody who can; a review
+  that waits is a change that rots.
+applies_to: stage:review
