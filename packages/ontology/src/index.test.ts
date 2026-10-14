@@ -29,6 +29,19 @@ function scratchFixture(): string {
   return dir
 }
 
+/** What the harness stands up beside the plugin. */
+interface HarnessOptions {
+  /** The role the role plugin published, if one is mounted and it states one. */
+  role?: string
+  /**
+   * Hold the role back until {@link Harness.stateRole} is called.
+   *
+   * The two packages are separate mounts, so a service that appears after this plugin loaded is the
+   * ordinary case rather than a corner, and this is how the harness produces it.
+   */
+  lateRole?: boolean
+}
+
 interface Harness {
   /** The scratch domain this harness mounted, so tests can resolve paths inside it. */
   root: string
@@ -40,19 +53,28 @@ interface Harness {
   sections: Map<string, string>
   /** The same sections as providers, so a test can ask for a fresh assembly. */
   providers: Map<string, () => string>
+  /** What each section asked the registry for, which is only readable off the declaration. */
+  interpolate: Map<string, boolean | undefined>
   /** Evaluate a section again, which is what the registry does for each assembly. */
   readSection(name: string): string
+  /** Hand the role service over now, as a plugin loading after this one would. */
+  stateRole(role: string): void
 }
 
 /** A context that records what the plugin does, without a runtime or a domain on disk. */
-function harness(): Harness {
+function harness(options: HarnessOptions = {}): Harness {
+  // The role plugin's channel, as this plugin sees it: a callback to be called when the service
+  // exists, which may be later than the call that registered it.
+  let deliver: ((scoped: never) => void) | undefined
   const state: Harness = {
     root: '',
     registered: [],
     logs: [],
     sections: new Map(),
     providers: new Map(),
+    interpolate: new Map(),
     readSection: (name) => state.providers.get(name)?.() ?? '',
+    stateRole: (role) => deliver?.({ deepworkRole: { role } } as never),
     ctx: undefined as unknown as OntologyContext,
   }
   state.ctx = {
@@ -70,8 +92,17 @@ function harness(): Harness {
       info: (message: string) => state.logs.push(`info: ${message}`),
     },
     inject: (names, callback) => {
-      // Only the prompt registry is stood up. Everything else the plugin asks for is absent, and
-      // the plugin has to work without it — which is exactly what leaving the others empty tests.
+      // Two services are stood up. Everything else the plugin asks for is absent, and the plugin has
+      // to work without it — which is exactly what leaving the others empty tests.
+      if (names.includes('deepworkRole')) {
+        if (options.lateRole === true) {
+          deliver = callback
+          return
+        }
+        if (options.role === undefined) return
+        callback({ deepworkRole: { role: options.role } } as never)
+        return
+      }
       if (!names.includes('systemPrompt')) return
       callback({
         systemPrompt: {
@@ -81,6 +112,7 @@ function harness(): Harness {
             // test while the section never followed the world.
             const provider =
               typeof section.text === 'function' ? section.text : () => section.text as string
+            state.interpolate.set(section.name, section.interpolate)
             state.providers.set(section.name, provider)
             state.sections.set(section.name, provider())
             return () => {}
@@ -152,17 +184,21 @@ test('a shell redirect outside the domain is refused once the guard is mounted',
 
 const LESSONS = resolve(fileURLToPath(import.meta.url), '../../examples/lessons')
 
-/** Mount the lessons example, which is the smallest domain that vouches for anything. */
-function mountLessons(situation: string, extra: Record<string, unknown> = {}): Harness {
-  const h = harness()
+/**
+ * Mount the lessons example, which is the smallest domain that vouches for anything.
+ *
+ * The role the deployment acts as is the role plugin's to state, so it is supplied through the
+ * service channel rather than as configuration here.
+ */
+function mountLessons(situation: string, options: HarnessOptions = {}): Harness {
+  const h = harness(options)
   h.root = mkdtempSync(join(tmpdir(), 'deepwork-index-lessons-'))
   cpSync(LESSONS, h.root, { recursive: true })
   apply(h.ctx, {
     ontologyRoot: h.root,
     situation,
     auditLog: join(h.root, 'audit.jsonl'),
-    ...extra,
-  } as never)
+  })
   return h
 }
 
@@ -236,10 +272,10 @@ test('the section is recomputed for each assembly, so a promotion arrives withou
   assert.notEqual(after, before, 'the two reads are genuinely different text')
 })
 
-test('a mode that states its role puts it in the situation without anyone typing the tag', (t) => {
-  // The role was a tag somebody had to remember, or an id-prefix map for the write path. Stating it
-  // once on the mount makes it available to the thing it actually describes: which rules this agent
-  // is here to follow.
+test('the role the mode acts as reaches the situation without anyone typing the tag', () => {
+  // The role was a tag somebody had to remember, or an id-prefix map for the write path. It arrives
+  // from the plugin whose job it is now, and lands in the thing it actually describes: which rules
+  // this agent is here to follow.
   const withRole = mountLessons('', { role: 'curator' })
   assert.match(withRole.readSection('deepwork:experience'), /role:curator/)
 
@@ -247,59 +283,26 @@ test('a mode that states its role puts it in the situation without anyone typing
   assert.doesNotMatch(without.readSection('deepwork:experience'), /role:/)
 })
 
-test('a mode mounts the prompt its role names, as its own section', (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'deepwork-prompt-'))
-  t.after(() => rmSync(dir, { recursive: true, force: true }))
-  const prompt = join(dir, 'curator.txt')
-  writeFileSync(prompt, 'You keep the lesson base honest.\n\nYou do not write lessons yourself.\n')
+test('a role published after this plugin loaded still reaches the situation', () => {
+  // The two packages are separate mounts, so which of them loads first is the composition's
+  // business. Reading the role per assembly, rather than resolving it once at load, is what makes
+  // that order not matter.
+  const h = mountLessons('', { lateRole: true })
 
-  const h = mountLessons('', { role: 'curator', prompts: { curator: prompt } })
+  assert.doesNotMatch(h.readSection('deepwork:experience'), /role:curator/)
 
-  assert.equal(
-    h.readSection('deepwork:role-prompt'),
-    'You keep the lesson base honest.\n\nYou do not write lessons yourself.\n',
-    'mounted verbatim — a prompt is prose, not a template',
-  )
-  // And the rules are still there, ranked after it.
-  assert.match(h.readSection('deepwork:experience'), /Rules this domain vouches for/)
+  h.stateRole('curator')
+
+  assert.match(h.readSection('deepwork:experience'), /role:curator/)
 })
 
-test('a prompt naming another role is not the one mounted', (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'deepwork-prompt-'))
-  t.after(() => rmSync(dir, { recursive: true, force: true }))
-  writeFileSync(join(dir, 'curator.txt'), 'curator prompt\n')
-  writeFileSync(join(dir, 'contributor.txt'), 'contributor prompt\n')
+test('the rules block asks not to be interpolated', () => {
+  // The registry's `{{variable}}` references are strict — an undefined one throws — and this text
+  // is domain data: a rule body is prose its author wrote, and nothing stops it containing a brace
+  // pair. Interpolation left on would make any such rule a way to take every turn down. What this
+  // pins is the flag on the registration, which is the half this package owns; what the registry
+  // does with the flag is the host's.
+  const h = mountLessons('artifact:pull_request')
 
-  const h = mountLessons('', {
-    role: 'contributor',
-    prompts: { curator: join(dir, 'curator.txt'), contributor: join(dir, 'contributor.txt') },
-  })
-
-  assert.equal(h.readSection('deepwork:role-prompt'), 'contributor prompt\n')
-})
-
-test('a prompt file that is not there is reported, and the mode still comes up', (t) => {
-  // Refusing to boot over a missing prompt would take the tools down with it, and a prompt is the
-  // one part of a mode whose absence degrades manner rather than capability.
-  const h = mountLessons('', { role: 'curator', prompts: { curator: 'D:/nowhere/absent.txt' } })
-
-  assert.equal(h.sections.has('deepwork:role-prompt'), false)
-  assert.match(h.readSection('deepwork:experience'), /Rules this domain vouches for/)
-  assert.ok(
-    h.logs.some((line) => line.includes('could not be read') && line.includes('curator')),
-    'and it says which role and which file',
-  )
-})
-
-test('a role with no prompt entry, and an empty prompt, are both said out loud', (t) => {
-  const silent = mountLessons('', { role: 'curator' })
-  assert.ok(silent.logs.some((line) => line.includes('declares no prompts entry')))
-
-  const dir = mkdtempSync(join(tmpdir(), 'deepwork-prompt-'))
-  t.after(() => rmSync(dir, { recursive: true, force: true }))
-  const empty = join(dir, 'curator.txt')
-  writeFileSync(empty, '   \n')
-  const blank = mountLessons('', { role: 'curator', prompts: { curator: empty } })
-  assert.equal(blank.sections.has('deepwork:role-prompt'), false)
-  assert.ok(blank.logs.some((line) => line.includes('is empty')))
+  assert.equal(h.interpolate.get('deepwork:experience'), false)
 })

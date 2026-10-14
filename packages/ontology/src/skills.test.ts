@@ -59,7 +59,7 @@ test('a type that declares no skill exposes none, however many instances it has'
 test('an id that is not name-shaped is adapted rather than rejected', () => {
   assert.equal(toSkillName('Lesson', 'LES-001'), 'lesson-les-001')
   // Nothing constrains an id, so the name is derived rather than assumed.
-  assert.equal(toSkillName('Test Pattern', 'TP_Review:001'), 'test-pattern-tp-review-001')
+  assert.equal(toSkillName('Test Pattern', 'PAT_Review:001'), 'test-pattern-pat-review-001')
   // An id with no alphanumerics in it at all leaves the type name on its own. Recorded rather
   // than guarded against: two such ids under one type would want the same name and the registry
   // would keep one of them, which is a real limit and a pathological input at the same time.

@@ -1,0 +1,53 @@
+{
+  "name": "@zhangcun123/role",
+  "version": "0.1.0",
+  "description": "The role a mode acts as, and the prompt it works under — a composition plugin for DeepWork.",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/types/**/*.d.ts",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "build": "tsc -p tsconfig.json",
+    "prepack": "tsc -p tsconfig.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "author": "zhangcun1995521",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhangcun1995521/deepwork.git",
+    "directory": "packages/role"
+  },
+  "homepage": "https://github.com/zhangcun1995521/deepwork",
+  "bugs": {
+    "url": "https://github.com/zhangcun1995521/deepwork/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "agent",
+    "role",
+    "prompt"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}

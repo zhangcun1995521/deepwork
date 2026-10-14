@@ -1,0 +1,18 @@
+# The composition layer this bundle contributes.
+#
+# Declaring `dsh.bundle.patch` is what turns this package from an inert dependency into a profile
+# layer, the same way the ontology plugin does it. The row names the package by its bare name so the
+# profile's own node_modules resolves it.
+
+- insert:
+    - id: deepwork-role
+      name: '@zhangcun123/role'
+      config:
+        # The role this mode acts as. Unset means the mode states none: no prompt is mounted, and the
+        # situation carries no role tag — which is the same mode as before this plugin existed.
+        role: !!js process.env.DEEPWORK_ROLE ?? ''
+        # Prompts to mount, by role: an absolute path per role, `{"curator": "/somewhere/curator.txt"}`.
+        # A path rather than a prompt body, because a prompt is prose somebody edits and reviews.
+        # Quoted because a bare scalar would let YAML read the ` : ` in the ternary as a mapping
+        # separator, and the row would fail to load as a result.
+        prompts: !!js 'process.env.DEEPWORK_ROLE_PROMPTS ? JSON.parse(process.env.DEEPWORK_ROLE_PROMPTS) : {}'

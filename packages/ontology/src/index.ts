@@ -8,7 +8,6 @@
  * @module @zhangcun123/ontology
  */
 
-import { readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join, resolve } from 'node:path'
 
@@ -35,6 +34,16 @@ export const inject = ['tools']
 
 /** The route the browser half reads its data from. */
 export const DOMAIN_ROUTE = '/deepwork'
+
+/**
+ * The service name the role plugin publishes its role under.
+ *
+ * A bare string rather than an imported symbol, because the two packages do not depend on each
+ * other: a mode may state no role, and this plugin must load with no role plugin beside it. Where
+ * they meet is a name both sides state — the same arrangement as the governance channel, in the
+ * other direction.
+ */
+const ROLE_SERVICE = 'deepworkRole'
 
 /** Plugin configuration, taken from the composition that mounts this plugin. */
 export interface Config {
@@ -84,34 +93,6 @@ export interface Config {
    * whole.
    */
   budget?: number
-  /**
-   * The role this mount acts as, when the composition states one.
-   *
-   * It does two things that turn out to be one thing. It selects which prompt below is mounted, and
-   * it joins the situation as a `role:` tag — so a mode says who its agents are once, and both the
-   * rules they must follow and the prompt they work under answer to it. Left unset, nothing changes:
-   * the situation is whatever was declared and no prompt is mounted.
-   *
-   * Deliberately **not** the same field as `roles` above, which answers "who is this caller" for the
-   * write path. That one has to fail closed and is a security decision; this one is a fact about how
-   * a mode is composed. A deployment that wants both states both, and conflating them would mean a
-   * mode could grant itself write authority by naming a role.
-   */
-  role?: string
-  /**
-   * Prompts to mount, by role: an absolute path to a text file per role.
-   *
-   * The second half of what a mode carries, and the half that has no other home. "You are the
-   * testing agent and this is your job" is a sentence about one agent, and a composition is the
-   * only place that can say it — a domain describes the enterprise, not the agent. It is a file
-   * rather than a config string because a prompt is prose somebody edits and reviews, not a value
-   * somebody types into YAML.
-   *
-   * `role` selects the entry. A missing file, or a role with no entry, is reported and the mode
-   * comes up without a prompt rather than failing to load: a missing prompt degrades an agent's
-   * manner, and refusing to boot over it would take the tools down with it.
-   */
-  prompts?: Record<string, string>
 }
 
 /** The slice of the runtime context this plugin uses. */
@@ -181,6 +162,18 @@ export interface SystemPromptSurface {
   }
   /** Tie the registration to this plugin's lifetime, the way the web route is tied. */
   effect?(callback: () => () => void, label?: string): void
+}
+
+/**
+ * The role a mode acts as, as the plugin that carries it publishes it.
+ *
+ * Structural and optional, like the surfaces above: nothing here imports the role package, and a
+ * deployment that mounts no role carries no such service — which is the ordinary case, and the one
+ * where the situation is whatever was declared and nothing more.
+ */
+export interface RoleSurface {
+  /** Absent when no role plugin is mounted, or when the one mounted states no role. */
+  deepworkRole?: { role: string }
 }
 
 /** The web surface a web-carrying profile provides. */
@@ -391,11 +384,23 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
   // Registered the same lazy, optional way as the web route and the catalog, because a profile
   // may have no prompt registry and nothing above may depend on one existing.
   //
-  // The text is a plain string, not a provider, and that is a decision rather than a shortcut: it
-  // is built once from the graph already in hand, so what is injected cannot drift from what the
-  // read tools return, and a domain file that becomes unreadable mid-session cannot fail prompt
-  // assembly. The cost is that a rule promoted during this process waits for the next boot, which
-  // is the limit the catalog has too.
+  // The role this mode acts as, from the plugin whose job it is.
+  //
+  // Kept out of this plugin's own config on purpose. "This mode acts as this role" is a statement
+  // about who an agent is, while a domain is about what the enterprise is; the fields sat here only
+  // because the ontology mount was the one thing a mode could configure, and the price of leaving
+  // them is that a mode stating its role needs a second mount of this plugin — and with it a second
+  // registration of every tool derived from the domain. It arrives over the service channel instead,
+  // named by both sides and imported by neither.
+  //
+  // Read per assembly rather than resolved once here, because the two packages are separate mounts
+  // and which of them loads first is the composition's business: the callback fires whenever the
+  // service appears, and `compute` reads whatever it left behind each time it runs.
+  let statedRole: string | undefined
+  ctx.inject?.([ROLE_SERVICE], (scoped: RoleSurface) => {
+    statedRole = scoped.deepworkRole?.role
+  })
+
   // The situation and the selection, computed from the domain **as it is right now**.
   //
   // This runs once at boot and again before every assembly, and the second one is the point. The
@@ -411,11 +416,11 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
     const graph = loadGraph(ontologyRoot)
     const resolved = resolveActive(graph, config.active ?? '')
     const declared = parseSituation(config.situation ?? '')
-    // A mount may state the role it acts as, and then the situation has that role without anyone
-    // having to write the tag by hand. `roles` above answers a different question — who a *caller*
-    // is, for the write path — and the two are separate on purpose: one is a fact about this mode,
-    // the other a security decision that has to fail closed. A mode that wants both states both.
-    const roleTag = config.role === undefined || config.role.length === 0 ? [] : [`role:${config.role}`]
+    // The role the mode acts as, so the situation carries it without anyone having to write the tag
+    // by hand. `roles` above answers a different question — who a *caller* is, for the write path —
+    // and the two are separate on purpose: one is a fact about this mode, the other a security
+    // decision that has to fail closed. A mode that wants both states both.
+    const roleTag = statedRole === undefined || statedRole.length === 0 ? [] : [`role:${statedRole}`]
     const selection = selectRules(
       graph,
       {
@@ -454,7 +459,7 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
             name: 'deepwork:experience',
             // Beside the persona and ahead of every tool description: these are requirements on
             // the work, and a reader meets them where it meets who it is. Ranked below the role
-            // prompt below, because identity reads before obligation.
+            // prompt a mode mounts at the persona's +1, because identity reads before obligation.
             order: prompt.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 2,
             // Domain data must not be able to fail prompt assembly, and the registry's
             // `{{variable}}` references are strict — an undefined one throws. A rule that happens
@@ -491,57 +496,6 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
       ctx,
       `no rule is vouched for in this domain, so nothing is injected — the domain vouches for ` +
         `${first.selection.total} rule(s)`,
-    )
-  }
-
-  // The prompt this mode works under, when the composition named one.
-  //
-  // Registered as its own section rather than through the persona registry, and the reason is the
-  // one the composition already ran into: a deployment persona row and a role prompt would both be
-  // writing to the agent's identity, and two registrations of one name in one layer throw. A
-  // distinct name sidesteps that and says what the block is, which `deployment:persona-prefix`
-  // would not — this prompt is about *this role in this mode*, and it arrives beside the rules that
-  // role must follow rather than instead of the deployment's own persona.
-  const promptFile = config.role === undefined ? undefined : config.prompts?.[config.role]
-  if (config.role !== undefined && promptFile !== undefined) {
-    let body: string | undefined
-    try {
-      body = readFileSync(promptFile, 'utf8')
-    } catch (error) {
-      warn(
-        ctx,
-        `the prompt for role "${config.role}" could not be read from ${promptFile} ` +
-          `(${error instanceof Error ? error.message : String(error)}); the mode comes up without ` +
-          'it, and the tools below are unaffected',
-      )
-    }
-    if (body !== undefined && body.trim().length > 0) {
-      const text = body
-      ctx.inject?.(['systemPrompt'], (prompt: SystemPromptSurface) => {
-        prompt.effect?.(
-          () =>
-            prompt.systemPrompt.section({
-              name: 'deepwork:role-prompt',
-              // Ahead of the rules and behind the deployment's own persona: who this agent is, then
-              // what it must follow, then the tools.
-              order: prompt.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 1,
-              // A prompt is prose, and prose contains braces. The registry's `{{variable}}`
-              // references are strict, so interpolating text written outside this repository would
-              // be a way for a prompt to fail every turn.
-              interpolate: false,
-              text,
-            }),
-          'deepwork-ontology: role prompt',
-        )
-      })
-    } else if (body !== undefined) {
-      warn(ctx, `the prompt for role "${config.role}" at ${promptFile} is empty; nothing mounted`)
-    }
-  } else if (config.role !== undefined) {
-    warn(
-      ctx,
-      `this mount acts as role "${config.role}" and declares no prompts entry for it, so no prompt ` +
-        'is mounted — the situation still carries the role',
     )
   }
 }
