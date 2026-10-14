@@ -47,6 +47,8 @@ The same line as a picture — what a write passes through, and what comes out e
 
 ![How a write travels through DeepWork](docs/architecture.svg)
 
+[docs/architecture.md](docs/architecture.md) is the same route written out — the layers, one write end to end, and the limits named; and the [same document in Chinese](docs/architecture.zh.md) is there for a reader who works in Chinese.
+
 ## Who this is for
 
 Anyone putting an agent into a real business system. A forward-deployed engineer standing up
@@ -191,7 +193,7 @@ objects
 
 That second run is a governance model in fifteen lines, and not one of them was written by
 hand: it is the domain, read back. The enforcement behind those lines is described under
-[Governance](#governance) and checked by 168 tests.
+[Governance](#governance) and checked by 340 tests.
 
 ## What it looks like when an agent uses it
 
@@ -223,7 +225,7 @@ Working and demonstrated, not finished.
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-168 tests in total.
+340 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
@@ -301,8 +303,9 @@ Put a role map in the `roles` box and the write tool appears in the listing; lea
 and the page explains why it does not. That is the governance model answering a question out
 loud, from the running system, instead of from a document.
 
-Only domains named in `DEEPWORK_DOMAINS` (or the bundled example) are readable, because a
-path arriving from a browser is an arbitrary-read request.
+The panel answers from the domain the deployment loaded, and only that one: no path arrives from
+the browser, so a request cannot name a domain at all. Reading some other domain would mean
+starting another process with `DEEPWORK_ONTOLOGY_ROOT` pointing at it.
 
 ## Checking a domain
 
@@ -356,6 +359,9 @@ domain was put through. `packages/ontology/tests/fixtures/ahead-of-its-data` now
 | `packages/ontology/examples/engagement` | a staged delivery: four phases, and the customer's signature scoped to the stage it opens, so the road opens one gate at a time |
 | `packages/ontology/examples/agreed-practice` | the injection as a domain: a practice is a candidate until somebody else agrees to it, and naming a work item selects which agreed practices reach the prompt — the one example that exercises `situation` |
 | `packages/test-runner` | a capability: run a project's tests and read what the run said (see its README) |
+| `packages/session-query` | a capability the host does not ship yet: the lineage around one session, so an agent can pick up what another started |
+| `packages/lsp` | the same kind of stand-in: ask a language server where something is defined, instead of guessing from a text match |
+| `packages/role` | not a capability: the role a mode acts as and the prompt file it works under, registering nothing and publishing the role for the ontology to select rules by |
 | `packages/probe` | the smallest possible plugin, kept as the smoke test for the plugin route |
 | `tools/fde` | the FDE toolkit: qualify a use case before anything gets built (Python, runs standalone) |
 | `docs` | two recorded agent sessions, the derivation picture, and the architecture picture |
@@ -601,9 +607,10 @@ Three decisions worth naming, since each is a place the obvious thing is wrong:
   assembly, that is a case to handle rather than a theory: the text is produced inside a try, and
   the failure renders as a section that names it instead of taking every turn down with it.
 - **`interpolate: false`**, because the host's `{{variable}}` references are strict and this text
-  comes from domain data. A rule that happened to contain a brace pair would otherwise take every
-  turn down with it. Not hypothetical: the check that pins it is a rule whose body contains
-  `{{undeclared}}`, injected and answered back verbatim.
+  comes from domain data: a rule body is prose its author wrote. A rule that happened to contain a
+  brace pair would otherwise take every turn down with it. Pinned as far as this repository can pin
+  it — the mount test asserts the flag on the registration, and what the host then does with the
+  registration is the host's half.
 - **It registers even when the situation selects nothing.** Registering only when rules were
   selected meant a mistyped tag produced no section at all, so the one case where the deployment
   needs telling was the one case where it was told nothing. A live run found that, not the tests.
