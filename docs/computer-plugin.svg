@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="880" viewBox="0 0 920 880" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif">
+  <rect width="920" height="880" fill="#161a21"/>
+
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#6b7684"/>
+    </marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#37c98f"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#ff6b6b"/>
+    </marker>
+  </defs>
+
+  <text x="34" y="40" fill="#e6e8eb" font-size="19" font-weight="600">computer 插件 —— 一次点击经过什么</text>
+  <text x="34" y="62" fill="#9aa4b2" font-size="12.5">手是本地的，规矩在守卫。两边各有一次"拒绝"的机会，而且都在动手之前。</text>
+
+  <!-- 1 agent -->
+  <rect x="34" y="88" width="470" height="46" rx="7" fill="#1b2029" stroke="#2b323c"/>
+  <text x="50" y="108" fill="#c8d3e0" font-size="12.5" font-weight="600">① agent 说：点一下那个"保存"</text>
+  <text x="50" y="126" fill="#9aa4b2" font-size="11.5" font-family="ui-monospace, Consolas, monospace">click(window=67680, element_index=7)</text>
+  <path d="M 269 134 L 269 156" stroke="#6b7684" stroke-width="1.4" marker-end="url(#a)"/>
+
+  <!-- 2 guard -->
+  <rect x="34" y="158" width="470" height="86" rx="7" fill="#221a14" stroke="#7a5a2a"/>
+  <text x="50" y="178" fill="#f0a53a" font-size="12.5" font-weight="600">② 守卫（deepwork，全局挂载）</text>
+  <text x="50" y="198" fill="#c8d3e0" font-size="11.5">这个工具算不算"写"？调用者是谁？这一步允许吗？</text>
+  <text x="50" y="216" fill="#c8d3e0" font-size="11.5">允许的应用/目录是从域里【声明】出来的，不是写死在守卫里</text>
+  <text x="50" y="234" fill="#6b7684" font-size="11.5">← 现在这里认工具靠写死的名单，要补的就是这一步改成声明</text>
+  <path d="M 269 244 L 269 266" stroke="#6b7684" stroke-width="1.4" marker-end="url(#a)"/>
+
+  <!-- 3 plugin verify -->
+  <rect x="34" y="268" width="470" height="86" rx="7" fill="#171c24" stroke="#39424f"/>
+  <text x="50" y="288" fill="#c8d3e0" font-size="12.5" font-weight="600">③ computer 插件：先用缓存核对 index</text>
+  <text x="50" y="308" fill="#c8d3e0" font-size="11.5">上次读树时，index 7 = 一个叫"保存"的 Button</text>
+  <text x="50" y="326" fill="#c8d3e0" font-size="11.5">现在重新走一遍 UIA 树，index 7 还是它吗？</text>
+  <text x="50" y="344" fill="#6b7684" font-size="11.5">对不上 → 拒绝，不点。（窗口变了，重读一次）</text>
+  <path d="M 269 354 L 269 376" stroke="#6b7684" stroke-width="1.4" marker-end="url(#a)"/>
+
+  <!-- 4 powershell -->
+  <rect x="34" y="378" width="470" height="60" rx="7" fill="#1b2029" stroke="#2b323c"/>
+  <text x="50" y="398" fill="#c8d3e0" font-size="12.5" font-weight="600">④ powershell.exe 跑 invoke.ps1</text>
+  <text x="50" y="418" fill="#9aa4b2" font-size="11.5">结果写进 JSON 文件 → Node 读文件（不读 stdout：代码页会把中文弄乱）</text>
+  <path d="M 269 438 L 269 460" stroke="#6b7684" stroke-width="1.4" marker-end="url(#a)"/>
+
+  <!-- 5 desktop -->
+  <rect x="34" y="462" width="470" height="60" rx="7" fill="#141b16" stroke="#2f6b52"/>
+  <text x="50" y="482" fill="#37c98f" font-size="12.5" font-weight="600">⑤ UIA 树 / SendInput —— 真的点了</text>
+  <text x="50" y="502" fill="#9aa4b2" font-size="11.5">本机桌面。无需任何原生依赖（PowerShell 里就有）</text>
+  <path d="M 269 522 L 269 544" stroke="#37c98f" stroke-width="1.4" marker-end="url(#ag)"/>
+
+  <!-- 6 back -->
+  <rect x="34" y="546" width="470" height="60" rx="7" fill="#1b2029" stroke="#2b323c"/>
+  <text x="50" y="566" fill="#c8d3e0" font-size="12.5" font-weight="600">⑥ 回到 agent，带上审计</text>
+  <text x="50" y="586" fill="#9aa4b2" font-size="11.5">每次尝试一条结构化记录，含被拒的那些</text>
+
+  <!-- 右侧：两次拒绝 -->
+  <rect x="538" y="158" width="348" height="86" rx="7" fill="#251a1a" stroke="#7a3535"/>
+  <text x="554" y="178" fill="#ff6b6b" font-size="12" font-weight="600">拒绝一：守卫</text>
+  <text x="554" y="198" fill="#c8d3e0" font-size="11.5">这个应用不在声明的范围里</text>
+  <text x="554" y="214" fill="#c8d3e0" font-size="11.5">→ 拒 + 留痕，脚本根本没起</text>
+  <text x="554" y="232" fill="#6b7684" font-size="11">这是"提示词里说别乱动"给不了的</text>
+  <path d="M 504 201 L 536 201" stroke="#ff6b6b" stroke-width="1.4" marker-end="url(#ar)"/>
+
+  <rect x="538" y="268" width="348" height="86" rx="7" fill="#251a1a" stroke="#7a3535"/>
+  <text x="554" y="288" fill="#ff6b6b" font-size="12" font-weight="600">拒绝二：索引对不上</text>
+  <text x="554" y="308" fill="#c8d3e0" font-size="11.5">index 7 已经不是一个"保存"按钮了</text>
+  <text x="554" y="324" fill="#c8d3e0" font-size="11.5">→ 拒，不点。宁可不点，不点错</text>
+  <text x="554" y="342" fill="#6b7684" font-size="11">静默点错是这条路最危险的失败</text>
+  <path d="M 504 311 L 536 311" stroke="#ff6b6b" stroke-width="1.4" marker-end="url(#ar)"/>
+
+  <!-- 右下：位置 -->
+  <text x="538" y="404" fill="#e6e8eb" font-size="13" font-weight="600">它在这个仓库里的位置</text>
+
+  <rect x="538" y="420" width="348" height="42" rx="6" fill="#1b2029" stroke="#2b323c"/>
+  <text x="554" y="438" fill="#9aa4b2" font-size="11.5">① 宿主 DSH —— agent 循环 · 工具注册表 · 沙箱</text>
+  <text x="554" y="454" fill="#6b7684" font-size="11">第三方，不 fork</text>
+
+  <rect x="538" y="470" width="348" height="76" rx="6" fill="#171c24" stroke="#39424f"/>
+  <text x="554" y="488" fill="#c8d3e0" font-size="11.5" font-weight="600">④ 能力层（平行插件，互不依赖）</text>
+  <text x="554" y="506" fill="#c8d3e0" font-size="11.5">· ontology —— 本体 + 治理（引擎）</text>
+  <text x="554" y="524" fill="#37c98f" font-size="11.5">· computer —— 桌面操作（新增）</text>
+  <text x="554" y="541" fill="#6b7684" font-size="11">两者不 import 对方，靠装配层接线</text>
+
+  <rect x="538" y="554" width="348" height="52" rx="6" fill="#141b16" stroke="#2f6b52"/>
+  <text x="554" y="572" fill="#37c98f" font-size="11.5" font-weight="600">② 域 —— 数据</text>
+  <text x="554" y="590" fill="#c8d3e0" font-size="11.5">哪些应用能动、哪些目录能写、什么要批准</text>
+
+  <rect x="538" y="614" width="348" height="42" rx="6" fill="#1b2029" stroke="#2b323c"/>
+  <text x="554" y="632" fill="#c8d3e0" font-size="11.5">⑥ 装配 profile</text>
+  <text x="554" y="648" fill="#9aa4b2" font-size="11.5">把"这些工具算写"声明在这里 —— 不写进任何一个包</text>
+
+  <!-- 底部：动词面 -->
+  <rect x="34" y="638" width="470" height="92" rx="7" fill="#171c24" stroke="#39424f"/>
+  <text x="50" y="658" fill="#c8d3e0" font-size="12.5" font-weight="600">动词面（照千问办公那套）</text>
+  <text x="50" y="678" fill="#c8d3e0" font-size="11.5" font-family="ui-monospace, Consolas, monospace">list_windows · get_window_state · click · type_text · press_key · screenshot</text>
+  <text x="50" y="698" fill="#9aa4b2" font-size="11.5">先读 UIA 树（结构化、便宜、不会认错标签），截图只作兜底</text>
+  <text x="50" y="716" fill="#9aa4b2" font-size="11.5">优先级：type_text → click → press_key（能打字就别点）</text>
+
+  <text x="34" y="762" fill="#6b7684" font-size="11.5">已真跑验证：list-windows（26 个窗口，中文标题正确）· get-window-state（300 个元素，层级正确）· UIA 与 SendInput 均可用</text>
+  <text x="34" y="782" fill="#f0a53a" font-size="11.5">Windows-only：靠 UIA + SendInput，别的平台要另一条实现，包装不了</text>
+  <text x="34" y="802" fill="#9aa4b2" font-size="11.5">还没做：invoke.ps1 · TS 工具层 · 守卫认识这组工具 · 一份 skill 当手册 · 测试与文档</text>
+</svg>

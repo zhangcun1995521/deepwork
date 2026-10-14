@@ -1,0 +1,41 @@
+version: "1.0"
+
+# A domain whose only interesting property is that its people carry a *set* of tags.
+#
+# One question cannot be asked of a single value: "who covers any of these areas". The two modes
+# below are the same field read two ways, which is what makes the difference visible — `equals`
+# with a list field already means containment, so the two only separate when the caller has a set.
+
+object_types:
+  Person:
+    primary_key: person_id
+    required_fields: [person_id, name, tags]
+    file_location: objects/people/*.yaml
+    written_by: [curator]
+    fields:
+      person_id: { type: string, required: true }
+      name: { type: string, required: true }
+      tags: { type: array }
+
+functions:
+  covers_one:
+    description: People carrying one given tag.
+    use: filter_by
+    on: Person
+    by: tags
+
+  covers_any:
+    description: People carrying any of a set of tags.
+    use: filter_by
+    on: Person
+    by: tags
+    match: overlaps
+
+  covers_broken:
+    description: Declares a match nothing understands.
+    use: filter_by
+    on: Person
+    by: tags
+    match: sort-of
+
+action_types: {}

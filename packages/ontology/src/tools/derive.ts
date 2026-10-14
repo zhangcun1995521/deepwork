@@ -36,6 +36,12 @@ export interface JsonSchemaNode {
   items?: JsonSchemaNode
   properties?: Record<string, JsonSchemaNode>
   required?: readonly string[]
+  /**
+   * Exactly one branch must validate. Used where one argument genuinely takes two shapes — the
+   * host's own schema contract supports it, and advertising one shape while a mode accepts the
+   * other would make the schema lie about what the tool does.
+   */
+  oneOf?: JsonSchemaNode[]
 }
 
 /** Arguments as the model supplies them. Validated by the runtime before `execute`. */
@@ -154,6 +160,14 @@ function optionalString(args: ToolArgs, name: string): string | undefined {
   if (value === undefined) return undefined
   if (typeof value !== 'string') throw new Error(`argument "${name}" must be a string`)
   return value
+}
+
+/** Read an argument that a `match: overlaps` mode asks for as a set of values. */
+function optionalStringList(args: ToolArgs, name: string): string[] | undefined {
+  const value = args[name]
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) throw new Error(`argument "${name}" must be a list of strings`)
+  return value.map(String)
 }
 
 /** Look up an object type, or throw naming what was asked for. */
@@ -332,6 +346,20 @@ function matchesField(object: OntologyObject, field: string, wanted: string): bo
 }
 
 /**
+ * True when the instance's field shares any value with a set the caller supplied.
+ *
+ * The one question containment cannot answer: `matchesField` compares one wanted value against
+ * a field, which covers "has this tag" and not "has any of these tags". A scalar field is
+ * treated as a set of one, so a declaration does not have to know which shape the data took.
+ */
+function overlapsField(object: OntologyObject, field: string, wanted: readonly string[]): boolean {
+  const value = object.data[field]
+  if (value === undefined) return false
+  const held = (Array.isArray(value) ? value : [value]).map(String)
+  return held.some((candidate) => wanted.includes(candidate))
+}
+
+/**
  * True when the field equals any of several wanted values.
  *
  * A declaration writes this as a list — `where: { status: [AtRisk, Delayed] }` — which
@@ -399,6 +427,16 @@ function deriveDispatcher(
     /** For traverse: whether to walk the relation against its declared direction. */
     incoming: boolean
     where: Record<string, unknown>
+    /**
+     * How the parameter is compared to the field it names.
+     *
+     * `equals` asks for one value; a field holding a list already answers it by containment,
+     * which is why a declaration almost never has to say anything. `overlaps` is for the case
+     * that cannot be said that way: the caller has a *set* of values and wants the entities
+     * sharing any of them — "whose expertise covers one of these problem areas". That needs the
+     * parameter itself to be a list, which the schema and the comparison both have to know.
+     */
+    match: 'equals' | 'overlaps'
   }
 
   const modes: Mode[] = []
@@ -421,6 +459,16 @@ function deriveDispatcher(
     const relation = typeof declaration.relation === 'string' ? declaration.relation : undefined
     const on = typeof declaration.on === 'string' ? declaration.on : undefined
     const where = isMapping(declaration.where) ? declaration.where : {}
+
+    const rawMatch = declaration.match
+    if (rawMatch !== undefined && rawMatch !== 'equals' && rawMatch !== 'overlaps') {
+      warnings.push(
+        `function "${name}" declares match "${String(rawMatch)}"; expected "equals" or ` +
+          '"overlaps" — the mode is unavailable',
+      )
+      continue
+    }
+    const match: 'equals' | 'overlaps' = rawMatch === 'overlaps' ? 'overlaps' : 'equals'
 
     // A relation points one way, but the useful question often runs the other way:
     // `reported_on` goes Issue -> Project, while "what is blocking this project"
@@ -490,6 +538,7 @@ function deriveDispatcher(
       ...(relation === undefined ? {} : { relation }),
       incoming,
       where,
+      match,
     })
   }
 
@@ -499,17 +548,41 @@ function deriveDispatcher(
   // it. Modes that take no argument need none of this.
   const properties: Record<string, JsonSchemaNode> = {
     mode: stringNode(
-      `Which query to run. ${modes.map((mode) => `${mode.name}${mode.param === undefined ? '' : ` (takes "${mode.param}")`}`).join('; ')}.`,
+      `Which query to run. ${modes.map((mode) => `${mode.name}${mode.param === undefined ? '' : ` (takes "${mode.param}"${mode.match === "overlaps" ? " as a list" : ""})`}`).join('; ')}.`,
       modes.map((mode) => mode.name),
     ),
   }
+  // Two modes can name the same field and want it two ways — "has this tag" and "has any of these
+  // tags" read one field differently. The argument name is the field name, so they cannot be
+  // given different names, and the schema has to admit both shapes rather than advertise one and
+  // let the other mode's reader reject what the schema allowed.
+  const shapes = new Map<string, Set<'string' | 'array'>>()
+  for (const mode of modes) {
+    if (mode.param === undefined) continue
+    const seen = shapes.get(mode.param) ?? new Set<'string' | 'array'>()
+    seen.add(mode.match === 'overlaps' ? 'array' : 'string')
+    shapes.set(mode.param, seen)
+  }
+
   for (const mode of modes) {
     if (mode.param === undefined) continue
     const existing = properties[mode.param]
     const note = `for mode "${mode.name}"`
+    const kinds = shapes.get(mode.param) ?? new Set(['string'])
+    const shape: JsonSchemaNode =
+      kinds.size > 1
+        ? {
+            oneOf: [
+              stringNode(`${mode.paramDescription ?? mode.param}`),
+              { type: 'array', items: { type: 'string' } },
+            ],
+          }
+        : mode.match === 'overlaps'
+          ? { type: 'array', items: { type: 'string' } }
+          : stringNode(`${mode.paramDescription ?? mode.param}`)
     properties[mode.param] =
       existing === undefined
-        ? stringNode(`${mode.paramDescription ?? mode.param} — ${note}`)
+        ? { ...shape, description: `${mode.paramDescription ?? mode.param} — ${note}` }
         : { ...existing, description: `${existing.description} ${note}` }
   }
 
@@ -571,14 +644,22 @@ function deriveDispatcher(
 
       objects = objects.filter((object) => matchesWhere(object, mode.where))
       if (mode.param !== undefined) {
-        const value = optionalString(args, mode.param)
-        if (value === undefined) {
-          throw new Error(`mode "${modeName}" requires argument "${mode.param}"`)
+        if (mode.match === 'overlaps') {
+          const wanted = optionalStringList(args, mode.param)
+          if (wanted === undefined) {
+            throw new Error(`mode "${modeName}" requires argument "${mode.param}"`)
+          }
+          objects = objects.filter((object) => overlapsField(object, mode.param as string, wanted))
+        } else {
+          const value = optionalString(args, mode.param)
+          if (value === undefined) {
+            throw new Error(`mode "${modeName}" requires argument "${mode.param}"`)
+          }
+          objects =
+            mode.primitive === 'search'
+              ? objects.filter((object) => matchesQuery(object, value))
+              : objects.filter((object) => matchesField(object, mode.param as string, value))
         }
-        objects =
-          mode.primitive === 'search'
-            ? objects.filter((object) => matchesQuery(object, value))
-            : objects.filter((object) => matchesField(object, mode.param as string, value))
       }
 
       return pack(modeName, objects, [], maxResults)

@@ -336,3 +336,63 @@ test('a declared traversal narrows what it arrives at', () => {
     ['P-2026-001'],
   )
 })
+
+// ── a mode that takes a set rather than a value ──────────────────────────────────
+//
+// Containment already falls out of a list field, so `equals` answers "has this tag". What it
+// cannot answer is "has any of these tags", because its parameter is one value. That is the whole
+// of what `match: overlaps` adds, and the fixture reads the same field both ways so the
+// difference is the thing under test rather than an implementation detail.
+
+test('overlaps asks a question a single value cannot, over the same field', () => {
+  const { tools } = deriveTools(loadGraph(fixture('tagged')))
+  const query = toolNamed(tools, 'ontology_query')
+  const ids = (result: { objects: Array<{ id: string }> }): string[] =>
+    result.objects.map((object) => object.id)
+
+  // One value: containment, which is what `equals` has always done with a list field.
+  assert.deepEqual(ids(run(query, { mode: 'covers_one', tags: 'ontology' }) as never), ['P-1'])
+  assert.deepEqual(ids(run(query, { mode: 'covers_one', tags: 'testing' }) as never), ['P-2'])
+
+  // A set: either tag, so both people — and one declaration, not one per tag.
+  assert.deepEqual(ids(run(query, { mode: 'covers_any', tags: ['ontology', 'testing'] }) as never), [
+    'P-1',
+    'P-2',
+  ])
+  assert.deepEqual(ids(run(query, { mode: 'covers_any', tags: ['tooling'] }) as never), ['P-2'])
+  assert.deepEqual(ids(run(query, { mode: 'covers_any', tags: ['nothing-still-has-this'] }) as never), [])
+})
+
+test('a mode taking a set says so in its schema, so the caller sends a set', () => {
+  const { tools } = deriveTools(loadGraph(fixture('tagged')))
+  const properties = (toolNamed(tools, 'ontology_query').parameters as {
+    properties: Record<string, { type?: string }>
+  }).properties
+
+  // Two modes read one field two ways, and the argument name is the field name — so the schema
+  // has to admit both shapes rather than advertise one and let the other mode's reader reject
+  // what the schema allowed.
+  const tags = properties.tags as { oneOf?: Array<{ type?: string }> }
+  assert.deepEqual(
+    tags.oneOf?.map((branch) => branch.type),
+    ['string', 'array'],
+    'both shapes are advertised, because one mode takes each',
+  )
+  // And a mode that needs a set refuses a single value rather than guessing — the schema admitted
+  // both shapes, so the mode is the only place left that can tell the caller which one it wanted.
+  assert.throws(
+    () => run(toolNamed(tools, 'ontology_query'), { mode: 'covers_any', tags: 'ontology' }),
+    /argument "tags" must be a list of strings/,
+  )
+})
+
+test('a match nothing understands drops the mode and says what was expected', () => {
+  const { tools, warnings } = deriveTools(loadGraph(fixture('tagged')))
+  const joined = warnings.join('\n')
+
+  assert.ok(joined.includes('function "covers_broken" declares match "sort-of"'), joined)
+  const modes = (toolNamed(tools, 'ontology_query').parameters as {
+    properties: { mode: { enum: string[] } }
+  }).properties.mode.enum
+  assert.deepEqual(modes, ['covers_one', 'covers_any'])
+})
