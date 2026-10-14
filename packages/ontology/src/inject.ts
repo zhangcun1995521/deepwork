@@ -9,14 +9,24 @@
  *
  * What makes it more than a hard-coded block is `applies_to`. The domain tags each rule with the
  * situations it governs — `artifact:handover`, `stage:review`, `role:analyst` — and
- * the deployment states which situation it is in. So the answer to "what must I follow" is
- * computed from the world rather than chosen by the model, and it changes when the world does.
- * A deployment that states no situation is not left with nothing: it gets every vouched-for rule,
- * which is the safe direction to be wrong in.
+ * the deployment states which situation it is in, so the block can say which of the rules are about
+ * the work in front of the agent.
+ *
+ * Of those dimensions only the role decides whether a rule appears at all, and the reason is the
+ * difference between declaring and inferring. A role is declared: the mode says which one it acts
+ * as. A stage and a product are inferred — the session names an object, the domain maps its state
+ * onto a tag, and the product is whatever the domain says that kind of thing is. An inference is
+ * useful and it is sometimes wrong, so it ranks and annotates and it removes nothing: a rule the
+ * situation is inferred to be about is *marked*, in place, and one it is not inferred to be about
+ * is listed all the same. The single thing that keeps a rule out is declaring a role this
+ * deployment is not acting as, and how many were left out that way is stated in the framing,
+ * because a section that narrowed in silence would be indistinguishable from a domain with less to
+ * say. A deployment that states no situation at all gets every vouched-for rule, which is the safe
+ * direction to be wrong in.
  *
  * One limit, recorded rather than papered over: a situation tag that matches nothing is reported
- * rather than silently yielding an empty section, because a typo in a deployment's config must not
- * be able to delete the rules it was meant to select.
+ * rather than silently marking nothing, because from inside the block a typo and a situation no
+ * rule names look identical.
  *
  * @module @zhangcun123/ontology/inject
  */
@@ -32,11 +42,43 @@ export interface InjectedRule {
   group?: string
   /** The rule itself. */
   rule: string
+  /** The tags the declaration routes this rule by, in declaration order. */
+  tags: string[]
+  /** The products this rule's declared relations name, in declaration order. */
+  constrains: string[]
+  /**
+   * Whether the platform asserts this rule applies to the situation right now.
+   *
+   * Not a filter, and never a reordering: a marked rule is marked where it already sits, and
+   * collected a second time into the index line the framing carries.
+   */
+  marked: boolean
 }
 
-/** One line of the rendered list, wrapped so it can be measured in the same form it is written. */
+/**
+ * The mark in front of a rule the platform asserts applies now.
+ *
+ * A prefix rather than a move, because the block is read in an order that does not change with the
+ * world — a reader who has learned where a rule sits must not find it somewhere else because a
+ * state moved.
+ */
+const MARK = '▸ '
+
+/**
+ * One line of the rendered list, wrapped so it can be measured in the same form it is written.
+ *
+ * The line carries the tags it was declared under and what it constrains, because the block lists
+ * every rule this role may follow and a reader with no way to tell which of them names the work in
+ * front of it would be handed a pile rather than a rule set. Both halves are omitted when empty, so
+ * a rule that declares neither renders as it always did.
+ */
 function lineOf(rule: InjectedRule): string {
-  return `- **${rule.id}** — ${rule.rule.replace(/\s*\n\s*/g, ' ').trim()}`
+  const declared = [
+    ...(rule.tags.length === 0 ? [] : [rule.tags.join(', ')]),
+    ...(rule.constrains.length === 0 ? [] : [`constrains ${rule.constrains.join(', ')}`]),
+  ]
+  const facts = declared.length === 0 ? '' : `   [${declared.join('; ')}]`
+  return `${rule.marked ? MARK : ''}- **${rule.id}** — ${rule.rule.replace(/\s*\n\s*/g, ' ').trim()}${facts}`
 }
 
 /** The heading a rule is filed under. */
@@ -88,15 +130,29 @@ export interface Selection {
   rules: InjectedRule[]
   /** Every vouched-for rule, whatever the situation. The denominator of "how many of how many". */
   total: number
-  /** How many rules the situation matched, before any budget was applied. */
-  matched: number
+  /**
+   * Rules this role may follow: every vouched-for rule except the ones that declare another role.
+   *
+   * The numerator the framing prints, and not the count of rules the situation "matched", which is
+   * what it used to be. A rule is available because of what it declares, never because of what was
+   * inferred about the work.
+   */
+  available: number
+  /**
+   * Rules left out for declaring a role this deployment is not acting as.
+   *
+   * Counted rather than dropped quietly, and stated in the section, because a rule left out for
+   * another role and a rule the domain does not have look identical from inside the prompt. This is
+   * the only reason a rule can be absent: nothing inferred from an object's state removes one.
+   */
+  excluded: number
   /**
    * Rules the budget kept out.
    *
    * Counted rather than dropped quietly, and reported in the section itself, because a rule left
-   * out for want of room and a rule that does not apply look identical from inside the prompt.
-   * What is left out stays loadable by name — this narrows what is *forced* on the agent, not
-   * what it may read.
+   * out for want of room and a rule that is simply further down the list look identical from inside
+   * the prompt. What is left out stays loadable by name — this narrows what is *forced* on the
+   * agent, not what it may read.
    */
   dropped: number
   /** The character ceiling the section was written against, when one was declared. */
@@ -106,7 +162,7 @@ export interface Selection {
    *
    * Reported, not enforced: a domain may legitimately tag a rule with something no current
    * situation names. It is also, far more often, a typo — and a typo here is silent, because a
-   * tag that matches nothing simply selects nothing.
+   * tag that matches nothing simply marks nothing.
    */
   unknown: string[]
 }
@@ -155,8 +211,8 @@ export interface Situation {
   /**
    * The products being worked on, as `Deliverable` ids.
    *
-   * Empty means the deployment did not say, and the product gate opens rather than closing on
-   * everything — the same direction every other unstated half of a situation falls.
+   * Empty means the deployment did not say, and it costs nothing: this half keeps no rule out and
+   * lets no rule in, so an unstated product marks nothing rather than marking the wrong thing.
    */
   deliverables: string[]
   /** The tag half: role, phase, and whatever else the domain tags its rules with. */
@@ -228,10 +284,10 @@ export function resolveActive(graph: OntologyGraph, activeId: string): ActiveRes
   // would not. Found by building an example whose product type is named something else and watching
   // half the mechanism work.
   //
-  // A domain may declare no product type at all, and that is a choice rather than a mistake: the
-  // product gate stays open, and the state tags below still work. So its absence skips the product
-  // half and reports nothing — the two declarations are independent, and conflating them would
-  // quietly disable one to protest the other.
+  // A domain may declare no product type at all, and that is a choice rather than a mistake: with no
+  // product type there is nothing for the product half to mark, and the state tags below still work.
+  // So its absence skips the product half and reports nothing — the two declarations are
+  // independent, and conflating them would quietly disable one to protest the other.
   const product = graph.schema.situationProduct
 
   if (product !== undefined && graph.byId.get(`${product}:${id}`) !== undefined) {
@@ -308,26 +364,38 @@ function tagsOf(declaration: { whenToUse?: string }, data: Record<string, unknow
 /**
  * Select the rules a situation governs.
  *
- * A rule applies when it clears two gates, each of which opens rather than closes on what its
- * side did not state:
+ * One gate decides membership, and it is the only half of a situation that is *declared*: the role.
  *
- *   - **the product gate** — the rule constrains one of the products being worked on, or it
- *     constrains nothing in particular and so applies whatever is being made. "Money is compared as
- *     integers" is not about any one deliverable and must survive naming one.
- *   - **the tag gate** — the rule shares any one tag with the situation, or it declares none.
+ *   - a rule that declares a role tag this deployment is not acting as is left out, and counted;
+ *   - a rule that declares no role tag belongs to every role, and is included — an unclassified
+ *     rule must not be hidden by the absence of a classification;
+ *   - a deployment that states no role at all gets everything, the direction every unstated half of
+ *     a situation falls.
  *
- * Requiring every tag to match instead would hide a rule from a deployment that could state only
- * one of them, and hidden is the failure this whole module exists to prevent. Two gates rather
- * than one long tag list, because a product is a *thing* and a tag is a word: the first is
- * queryable in both directions — ask the ontology which rules govern the case you are writing —
- * and the second is a vocabulary two sides have to agree on.
+ * Everything else a situation says ranks and annotates, and decides nothing. The products being
+ * worked on and the stage they are at are *inferred* — the session names an object, the domain maps
+ * its state onto a tag, and the product is whatever the domain says that kind of thing is — and an
+ * inference that is sometimes wrong must not be able to remove a requirement from the block. So a
+ * rule is **marked** when it constrains one of the products being worked on, or when it shares a tag
+ * with the situation *other than the role's*: the platform asserting that this one applies now. A
+ * rule that is not marked is listed all the same, under its own tags, for the reader to judge.
  *
- * What the gates do *not* do is rank. Nearly every rule carries a role tag, so a three-tag
- * situation matches most of the domain, and at scale "matches" stops meaning anything. The rank is
- * how many *dimensions* of the rule the situation actually pins down — the product counts as one,
- * each tag dimension as another — so a rule written for this product, role and phase outranks one
- * that only names the role. That ordering is invisible while everything fits, and decides who gets
- * in once the budget binds.
+ * The role is named as the exception and it is not a detail. It is the dimension spent on the gate
+ * above, so consulting it again here asks a question that has already been answered — and answered
+ * the same way for every rule that survived, since sharing this deployment's role is what surviving
+ * meant. Counting that as a marker would mark every rule this role may follow, which is a marker
+ * that distinguishes nothing, and a count that reads as "all of them" reads as no count at all. A
+ * situation that states a role and nothing else therefore marks nothing, and that is the honest
+ * answer rather than a shortage: there is no inferred half, so there is nothing for a marker to come
+ * from. The framing has a sentence for that case rather than a count of zero, because "0 of 46" is a
+ * number a reader goes looking for a mistake behind.
+ *
+ * The rank is what the budget spends, and it is not the marking. It counts every *dimension* of the
+ * rule the situation pins down — the product as one, each tag dimension as another, the role among
+ * them — so a rule written for this role is more specific than one that names nobody, and one
+ * written for this product, role and phase outranks one that only names the role. A rule the
+ * situation pins down in no dimension at all is the first to leave. That ordering is invisible while
+ * everything fits, and it never decides the order the block is read in; see below.
  *
  * @param graph - A loaded domain.
  * @param situation - What the deployment says it is doing, and to what.
@@ -341,12 +409,15 @@ export function selectRules(
   const vouched = vouchedInstances(graph)
   const vocabulary = new Set<string>()
   const situationDimensions = new Map<string, string[]>()
+  const situationRoles: string[] = []
   for (const tag of situation.tags) {
     const dimension = dimensionOf(tag)
     situationDimensions.set(dimension, [...(situationDimensions.get(dimension) ?? []), tag])
+    if (dimension === 'role') situationRoles.push(tag)
   }
 
   const candidates: { rule: InjectedRule; score: number }[] = []
+  let excluded = 0
 
   // What each rule constrains, read off the relations the domain declares rather than off a field
   // name the engine would have to know. A domain that renames `constrains` to `governs` needs no
@@ -364,20 +435,23 @@ export function selectRules(
     const ruleTags = tagsOf(declaration, object.data)
     for (const tag of ruleTags) vocabulary.add(tag)
 
+    // The gate that survived, and the reason it is the one that did: a role is declared rather than
+    // inferred. A rule that names no role is kept whatever role this is, because "nobody said which
+    // role this is for" is not a claim that it is for somebody else — that silence is the case a
+    // gate would hide a requirement in, and hiding requirements is what this module exists to
+    // prevent.
+    const declaredRoles = ruleTags.filter((tag) => dimensionOf(tag) === 'role')
+    if (situationRoles.length > 0 && declaredRoles.length > 0) {
+      if (!declaredRoles.some((tag) => situationRoles.includes(tag))) {
+        excluded += 1
+        continue
+      }
+    }
+
     const products = constrains.get(object.id) ?? []
-    const productPinned =
+    const productMarked =
       situation.deliverables.length > 0 &&
       products.some((id) => situation.deliverables.includes(id))
-    // A rule that constrains nothing applies whatever is being made — "money is compared as
-    // integers" is not about any one product, and naming a product must not hide it.
-    if (situation.deliverables.length > 0 && products.length > 0 && !productPinned) continue
-    if (
-      situation.tags.length > 0 &&
-      ruleTags.length > 0 &&
-      !ruleTags.some((tag) => situation.tags.includes(tag))
-    ) {
-      continue
-    }
 
     const rule = text(object, declaration.body)
     if (rule === undefined) continue
@@ -389,17 +463,35 @@ export function selectRules(
       const dimension = dimensionOf(tag)
       dimensions.set(dimension, [...(dimensions.get(dimension) ?? []), tag])
     }
-    const tagsMatched = [...dimensions].filter(([dimension, values]) =>
+    // Every dimension of the rule the situation pins down. This is the rank the budget spends, and
+    // the role counts towards it like any other — a rule written for this role is more specific
+    // than one that names nobody.
+    const pinned = [...dimensions].filter(([dimension, values]) =>
       (situationDimensions.get(dimension) ?? []).some((tag) => values.includes(tag)),
-    ).length
+    )
+    // And only the *inferred* dimensions may mark. The role is excluded here and not because it is
+    // unimportant: it was spent deciding whether this rule is available at all, so reading it a
+    // second time asks a question already answered, and every rule this role may follow answers it
+    // yes — a marker on every line is a marker that says nothing, and the reader is handed a count
+    // that describes listing rather than attention. What is left is the half that was inferred from
+    // an object: the stage the domain read off its state, and the product the domain read off its
+    // kind.
+    const tagsMarked = pinned.filter(([dimension]) => dimension !== 'role').length
 
     candidates.push({
-      rule: { id: object.id, ...(group === undefined ? {} : { group }), rule },
-      score: tagsMatched + (productPinned ? 1 : 0),
+      rule: {
+        id: object.id,
+        ...(group === undefined ? {} : { group }),
+        rule,
+        tags: ruleTags,
+        constrains: products,
+        marked: tagsMarked > 0 || productMarked,
+      },
+      score: pinned.length + (productMarked ? 1 : 0),
     })
   }
 
-  const matched = candidates.length
+  const available = candidates.length
 
   // Most specific first, so that when room runs out what is left out is the most general advice
   // rather than whichever rule happened to be read last.
@@ -432,9 +524,9 @@ export function selectRules(
     while (kept.length > 0 && renderList([...kept].sort(byHeading)).length > ceiling) kept.pop()
   }
 
-  // Ranking decided *which* rules got in; it must not decide the order they are read in. Sorted by
-  // heading then by id, so the same situation renders the same prompt every time — the same reason
-  // the loader sorts directory entries and the catalog sorts names.
+  // The ranking decided *which* rules got in; it must not decide the order they are read in, nor
+  // may the marking. Sorted by heading then by id, so the same situation renders the same prompt
+  // every time — the same reason the loader sorts directory entries and the catalog sorts names.
   kept.sort(byHeading)
 
   const unknown = situation.tags.filter((tag) => !vocabulary.has(tag))
@@ -445,8 +537,9 @@ export function selectRules(
     ...(situation.trouble === undefined ? {} : { trouble: situation.trouble }),
     rules: kept,
     total: vouched.length,
-    matched,
-    dropped: matched - kept.length,
+    available,
+    excluded,
+    dropped: available - kept.length,
     ...(ceiling === undefined ? {} : { budget: ceiling }),
     unknown,
   }
@@ -458,10 +551,16 @@ export function selectRules(
  * The framing is in English and the rules are in whatever language the domain wrote them in, for
  * the same reason the loader's notes are: the machinery has one voice and the data keeps its own.
  *
- * It says out loud that the list is filtered. A model handed forty rules under a heading reading
- * "the rules you must follow" has no way to know forty was a selection, and would treat an
- * omission as the domain having nothing to say — which is exactly the failure mode this module
- * reports on rather than hides.
+ * It says out loud what the one surviving gate left out, and it says out loud what a marker does
+ * and does not mean. A model handed forty rules under a heading reading "the rules you must follow"
+ * has no way to know forty was a selection, and would treat an omission as the domain having
+ * nothing to say — so the count of rules this role may follow, and the count that declared another
+ * role, are both written down. The marked rules are named in an index line of their own, and the
+ * rest are stated to be requirements all the same: an earlier version of this section said the
+ * unlisted rules "govern situations this deployment is not in", which was false twice over — it
+ * described a filter that no longer exists, and it invited a reader to treat a rule it was not
+ * shown as somebody else's problem. When nothing is marked the section says so in a sentence that
+ * gives the reason instead of printing a zero, since a zero here is a number a reader stops on.
  *
  * @param selection - What {@link selectRules} returned.
  */
@@ -484,10 +583,19 @@ export function renderSection(selection: Selection): string {
     '## Rules this domain vouches for (these are requirements, not suggestions)',
     '',
     'Each entry below has been confirmed by a person and carries an id you can cite. They are',
-    'requirements on your work in the situation described here; a deliverable that breaks one of',
-    'them is not finished, whatever else is true of it.',
+    'requirements on your work; a deliverable that breaks one of them is not finished, whatever',
+    'else is true of it. Each entry carries the tags it was declared under and the products it was',
+    'written about, so you can tell which of them name the work in front of you.',
     '',
   ]
+
+  const marked = selection.rules.filter((rule) => rule.marked)
+
+  // Whether the situation states anything a rule could be marked by. A role is the gate; a stage and
+  // a product are what a marker comes from, so a deployment that stated only a role has nothing to
+  // mark with — and that is a different sentence from "the situation named things no rule is about".
+  const named =
+    selection.deliverables.length > 0 || selection.tags.some((tag) => dimensionOf(tag) !== 'role')
 
   if (selection.deliverables.length === 0 && selection.tags.length === 0) {
     lines.push(
@@ -505,19 +613,48 @@ export function renderSection(selection: Selection): string {
     lines.push(
       `${working}${tags}.`,
       ...(selection.because === undefined ? [] : [`Situation computed from: ${selection.because}.`]),
-      `${selection.matched} of the ${selection.total} vouched-for rules apply here; the rest`,
-      'govern situations this deployment is not in, and are not withheld from you for any other',
-      'reason.',
+      // The role is the only thing that kept a rule out, so the count is stated where the rules
+      // are: a reader shown five of six has to be able to see that the sixth declares somebody
+      // else's role, and a reader shown six of six has to be able to see that nothing was withheld.
+      `${selection.available} of the ${selection.total} vouched-for rules are available to this role` +
+        (selection.excluded === 0
+          ? '; none is left out for declaring a different one.'
+          : `; the other ${selection.excluded} declare a different role and are not listed here.`),
+      // And what the marker means, because a reader who takes "not marked" for "not for me" is the
+      // reader this block exists to stop being.
+      //
+      // Zero markers gets its own sentence rather than a count of zero, and the two reasons it can
+      // happen are kept apart. A count of zero reads as a shortfall, and a reader who was given a
+      // role and nothing else would go looking for the twenty rules that were not marked when there
+      // is nothing to find: no stage and no product were stated, so the situation has no inferred
+      // half for a marker to come from.
+      ...(marked.length === 0
+        ? [
+            `None of them is marked for this situation, because ${
+              named
+                ? 'no rule here names what this deployment is working on'
+                : 'this deployment states a role and nothing else, and the role decides which rules ' +
+                  'you are given rather than which of them this work is about'
+            }.`,
+            'Every line below is a requirement on the work it names, exactly as it would be if it',
+            'carried a mark.',
+          ]
+        : [
+            `${marked.length} of them are marked for this situation; the rest are requirements whenever`,
+            'the work at hand is what they name. Not being marked means this situation is not the one',
+            'the platform can see, not that the rule is optional.',
+            `Marked here, in the order they are listed below: ${marked.map((rule) => rule.id).join(', ')}.`,
+          ]),
     )
   }
 
-  // Said out loud, because a rule left out for want of room and a rule that does not apply are
-  // the same absence from inside the prompt — and because the reader of a transcript is the one
-  // who has to change the number.
+  // Said out loud, because a rule left out for want of room and a rule that sits further down the
+  // list are the same absence from inside the prompt — and because the reader of a transcript is
+  // the one who has to change the number.
   if (selection.dropped > 0) {
     lines.push(
       '',
-      `${selection.dropped} of the rules that apply here are not listed: this deployment caps the`,
+      `${selection.dropped} of the rules available here are not listed: this deployment caps the`,
       `list at ${selection.budget ?? 0} characters, and the least specific rules are the ones left`,
       'out. They are still in your skill catalog, loadable by name — nothing has been taken away',
       'from you, only moved out of the part you cannot miss.',
@@ -542,6 +679,12 @@ export function renderSection(selection: Selection): string {
 
   const list = renderList(selection.rules)
   if (list.length > 0) lines.push(list)
+
+  // Closed, because the block is named as a delimiter and the host closes its own (`<skill_content>`
+  // is wrapped, not merely opened). An opening tag alone says where the block starts and leaves the
+  // end to be inferred, which is the one question a reader of the prompt should not have to infer:
+  // "the block is missing or empty" is a decision a role prompt makes about it.
+  lines.push('</patterns>')
 
   return lines.join('\n')
 }

@@ -33,7 +33,7 @@ flowchart TB
     d1["engine — schema, graph, lifecycle"]
     d2["derivation — the read, write and action tools"]
     d3["governance — guard, permission, review, audit"]
-    d4["injection — the situation, and the rules it selects"]
+    d4["injection — the situation, and the rules it marks"]
     d5["capabilities — a second plugin that adds an ability"]
   end
 
@@ -230,7 +230,7 @@ flowchart TB
   skill --> vouched
   life --> vouched
   vouched --> catalog["the skill catalogue, built once at load"]
-  vouched --> pool["the candidates for this situation"]
+  vouched --> pool["every rule this role may follow"]
 
   subgraph session["what the session is working on"]
     named["a session names an object: WI-1042"]
@@ -242,11 +242,16 @@ flowchart TB
     named --> product
   end
 
-  tag --> pool
-  product --> pool
-  pool --> gates{"it constrains one of those products, or nothing in particular — and it shares one tag, or declares none"}
-  gates -->|"both gates open"| injected["written into the prompt as the rules block"]
-  gates -->|"one gate closed"| held["not required here, and still loadable by name"]
+  statedRole["the role the mode states: role:author"]
+  pool --> roleGate{"it declares this role's tag, or declares no role at all"}
+  statedRole --> roleGate
+  roleGate -->|"yes"| listed["listed, with its tags and the products it constrains"]
+  roleGate -->|"it declares another role"| other["counted in the framing, and not silently dropped"]
+  listed --> mark{"it shares a tag with the situation other than the role's, or it constrains one of those products"}
+  tag --> mark
+  product --> mark
+  mark -->|"either one"| marked["marked in place, and named in the index line under the framing"]
+  mark -->|"neither"| unmarked["listed unmarked: required all the same, whenever it names what is being worked on"]
 ```
 
 The set is one traversal, `vouchedInstances`, and both surfaces read it for a stated reason: a
@@ -283,9 +288,23 @@ What the block can promise is that it cannot be missed: it is in front of the mo
 the model thought to look. What it cannot promise is that the rules are followed, because it is
 still text. It also cannot promise to be complete: `budget` caps the listed rules in characters,
 and above that cap the least specific rules are the ones held back and the section says so, because
-a rule left out for want of room and a rule that does not apply are the same absence from inside
-the prompt. What is held back stays in the catalogue under its own name — this narrows what is
-forced on the agent, not what it may read.
+a rule left out for want of room and a rule that is simply further down the list are the same
+absence from inside the prompt. What is held back stays in the catalogue under its own name — this
+narrows what is forced on the agent, not what it may read.
+
+What the block does *not* do is narrow itself to what the situation calls for, and that is the
+design rather than a limit. Every listed line carries the tags it was declared under and the
+products it constrains, so a reader can tell which of them name the work in front of it; the ones
+the situation calls for are marked in place, and named once more in an index line under the framing
+where attention lands first. An earlier version filtered instead — a rule had to clear a tag gate
+and a product gate to be listed at all, and one that did not was simply absent — and a live
+deployment showed why that fails. A rule the domain had written for the Python test script vanished
+from the prompt during the stage where the agent was about to write that script, because the gate
+compared a product the session had named against a product the rule named, and the two disagreed by
+one step. Nothing was reported, because from inside the block an omitted rule and a rule that does
+not exist look the same. So the filter that survived is the one over a dimension that is declared
+rather than inferred — the role — and what it leaves out is counted in the framing rather than
+removed in silence.
 
 Two absences are reported rather than rendered as silence. A vouched-for object whose named field
 is empty exposes no skill and produces no line, and the reason is said as a note; and if the domain
@@ -298,39 +317,51 @@ A rule is about a thing and a moment, and both halves of that are declared rathe
 domain names the type that carries "what am I making" — `situation: { product_type: Deliverable }`
 — and maps an object's states onto tags — `state_tags: { WorkItem: { in_review: stage:review } }`.
 A session then names the thing it is working on, and the tags follow. A tag a deployment states by
-hand is merged with the ones a name computes rather than replaced by them, which is what keeps a
-role — the one dimension no state can report — available for narrowing.
+hand is merged with the ones a name computes rather than replaced by them, which is what lets the
+role — the one dimension no state can report — be the gate: everything a name computes is inferred,
+so it marks and ranks, and what a deployment states by hand is the only half that can decide
+membership.
 
 The chain, on the example domain, is short enough to walk. A session states that it is working on
 `WI-1042`. `resolveActive` looks for an object with that id, finds a `WorkItem`, reads its state
 field (`stage`) and finds `in_review`, and asks the domain what that state means: `stage:review`.
 Separately it asks which products that work item *is* — the `Deliverable` instances whose
 `produced_as` is `WorkItem` — and gets `DLV-WI-1042` and `DLV-WI-1043`, both of them, because that
-is a fact about the kind of thing rather than about the one instance. `selectRules` then starts
-from the six vouched-for practices and applies two gates, each of which opens on what its side did
-not state. The product gate keeps a practice that constrains one of the two named deliverables, or
-that constrains nothing in particular. The tag gate keeps a practice that shares any one tag with
-the situation, or that declares none. Three of the six survive, and the section says exactly that:
-`3 of the 6 vouched-for rules apply here`. Above it sits the line recording where the situation came
-from — `Situation computed from: WorkItem WI-1042 is in_review, which this domain maps to
-stage:review` — and that line is not decoration. A computed situation has no other way to be
-checked: a tag somebody typed is visible in the prompt, and a tag derived from a state has to bring
-the state with it, or a wrong answer is indistinguishable from a right one. Naming `WI-1043`
-instead selects two rules, and naming the deliverable `DLV-WI-1042` directly selects five, since the
-tag half is then empty and only the product gate is doing work.
+is a fact about the kind of thing rather than about the one instance. `selectRules` then starts from
+the six vouched-for practices, keeps the ones that declare this deployment's role or declare no role
+at all, marks the ones that share a tag with the situation other than the role's or constrain one of
+the two named deliverables, and lists all six either way. The section says exactly that: `6 of the 6
+vouched-for rules are available to this role`, five of them marked. Above it sits the line recording
+where the situation came from — `Situation computed from: WorkItem WI-1042 is in_review, which this
+domain maps to stage:review` — and that line is not decoration. A computed situation has no other way
+to be checked: a tag somebody typed is visible in the prompt, and a tag derived from a state has to
+bring the state with it, or a wrong answer is indistinguishable from a right one. Naming `WI-1043`
+instead marks two of the same six, and naming the deliverable `DLV-WI-1042` directly marks one, since
+the tag half is then empty and the constraint is doing all of the marking.
+
+The role is excluded from the marking rather than counted twice, and the difference is visible the
+first time a deployment states a role and nothing else. Sharing this deployment's role is what it
+meant for a rule to survive the gate, so reading that same dimension as evidence about the work marks
+every listed rule — a marker on every line, and a count that describes the listing. A situation with
+no inferred half therefore marks nothing, and the section gives the reason in a sentence instead of
+printing a zero: there is no stage and no product, so there is nothing a marker could come from, and
+"0 of 46" is a number a reader goes looking behind.
 
 The rule's constraints are read off the relations the domain declares, not off a field name the
 engine knows: a rule constrains the products its links into `product_type` point at, whatever that
 relation is called. Renaming `governs` to `constrains` costs the engine nothing, and a domain that
-declares no product type at all is not a mistake — the product gate stays open and the state tags
-still work, because the two declarations are independent.
+declares no product type at all is not a mistake — with no product type there is nothing to mark
+against the product half, and the state tags still work, because the two declarations are
+independent.
 
-Ordering is decided twice and for different reasons. Ranking decides *who gets in* when the budget
-binds: the rank is how many dimensions of the rule the situation actually pins down, the product
-counting as one and each tag dimension as another, so a rule written for this product, role and
-phase outranks one that only names the role. Rendering decides *the order they are read in*: by
-heading and then by id, so the same situation renders the same prompt every time. Both are in
-`selectRules`, and neither is visible until the day the budget binds.
+Ordering is decided twice and for different reasons. The ranking decides *who leaves first* when the
+budget binds: the rank is how many dimensions of the rule the situation actually pins down, the
+product counting as one and each tag dimension as another — the role among them, which the marker
+does not count — so a rule written for this product, role and phase outranks one that only names the
+role, and a rule the situation pins down in no dimension at all, marked or not, is the first to go.
+Rendering decides *the order they are read in*: by heading and then by id, and the marking never
+reorders it, so the same situation renders the same prompt every time. Both are in `selectRules`, and
+the ranking is invisible until the day the budget binds.
 
 What is not automatic is worth as much as what is. The model is not routed: this decides what is in
 the catalogue and in the block, not whether either is used. The catalogue is built at load, so
@@ -341,10 +372,10 @@ no tag, because a product has no state, and inventing a stage for it would be ex
 person-typed guess this replaces. A state the domain maps to no tag yields no tag, and a domain
 that becomes unreadable mid-session loses its rules and says so in the section instead of taking
 every turn down with it. A tag that matches no rule, or an id nothing answers to, is reported
-rather than turned into an empty selection, because from inside the rule set a typo and a genuine
-silence look identical and only one of them is a mistake. And a deployment that states no situation
-gets every vouched-for rule rather than none: a requirement is the wrong thing to be selective
-about by accident.
+rather than passed over in silence, because from inside the rule set a typo and a situation no rule
+names look identical and only one of them is a mistake. And a deployment that states no situation
+gets every vouched-for rule rather than none: a requirement is the wrong thing to be selective about
+by accident.
 
 ## The capability layer
 
@@ -497,7 +528,8 @@ branch. None of them is smoothed over above.
 | A rule is advice. A skill cannot grow hands, and the guard refuses exactly the writes it refused before. | `skills.ts` |
 | The rules block is text, and the budget holds the least specific rules out of it when it binds. What is held back is still loadable by name. | `inject.ts`, `index.ts` |
 | `budget` measures the listed rules and not the framing around them, and `0` is taken literally as "inject no rules" rather than as "no ceiling". | `inject.ts`, `cordis.patch.yml` |
-| A product has no state, so naming a product supplies no situation tag; a state the domain maps to nothing yields no tag; a domain with no `product_type` leaves the product gate open. | `inject.ts` |
+| A product has no state, so naming a product supplies no situation tag; a state the domain maps to nothing yields no tag; a domain with no `product_type` has nothing to mark against the product half. | `inject.ts` |
+| A rule that declares a role this deployment is not is left out; how many were is stated in the framing, and the rule stays loadable by name. Nothing inferred from a state removes one. | `inject.ts` |
 | A situation derived from a state is only as good as the state field, which falls back to the lifecycle's `initial` when it is empty. | `stateOf`, `inject.ts` |
 | Role resolution is prefix-based, so a role map keyed on an id shape inherits the host's naming; a prefix of `*` states the role instead of inferring it. | `govern/permission.ts` |
 | The domain format is this repository's own. It is not a standard and there is no migration tool. | `packages/ontology/README.md` |
@@ -507,7 +539,7 @@ branch. None of them is smoothed over above.
 | Path | What it is |
 |---|---|
 | `packages/ontology/src/index.ts` | the plugin: what it mounts, in what order, and what it does when a seam is absent |
-| `packages/ontology/src/inject.ts` | the situation, the selection, and the rendered block |
+| `packages/ontology/src/inject.ts` | the situation, the selection and its marking, and the rendered block |
 | `packages/ontology/src/skills.ts` | the other half of the same declaration: the catalogue, and the vouched-for traversal both surfaces share |
 | `packages/ontology/src/engine/schema.ts` | what a domain may declare, and what is a warning rather than a failure |
 | `packages/ontology/src/engine/graph.ts` | instances, derived edges, the two indexes, and the in-place refresh |

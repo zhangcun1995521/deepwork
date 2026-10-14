@@ -10,7 +10,7 @@
  * verdict from somebody else, and a read that returns only what was vouched for.
  *
  * `agreed-practice` carries the half a skill catalog cannot: the same vouched-for set written into
- * the agent's prompt, selected by the state of the work item the session names.
+ * the agent's prompt, with the rules the state of the work item calls for marked within it.
  */
 import assert from 'node:assert/strict'
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -418,10 +418,10 @@ test('a role the move names may move without being able to author', (t) => {
 // ── the same rules, written into the prompt ─────────────────────────────────────
 //
 // `agreed-practice` is the domain that exercises the half a skill catalog cannot: the vouched-for
-// set is written into the prompt, and which part of it lands there is computed from the state of
-// the work item the session names. What the example's README asserts about that is pinned here,
-// because an example that quietly stopped showing the mechanism is worse than no example — the
-// README still claims it.
+// set is written into the prompt, and which of those rules the platform marks — the ones it asserts
+// apply to the work in hand — is computed from the state of the work item the session names. What
+// the example's README asserts about that is pinned here, because an example that quietly stopped
+// showing the mechanism is worse than no example — the README still claims it.
 
 const AUTHOR: RoleRule = { prefix: 'author-', role: 'author' }
 const REVIEWER: RoleRule = { prefix: 'reviewer-', role: 'reviewer' }
@@ -447,19 +447,30 @@ function selectionFor(graph: OntologyGraph, active: string): Selection {
 
 const ruleIds = (selection: Selection): string[] => selection.rules.map((rule) => rule.id)
 
-test('naming a work item selects the practices its stage calls for, and others once it moves', (t) => {
+const markedIds = (selection: Selection): string[] =>
+  selection.rules.filter((rule) => rule.marked).map((rule) => rule.id)
+
+/** The six the domain vouches for, in the order the block reads them: by kind, then by id. */
+const AGREED = ['PRA-006', 'PRA-003', 'PRA-004', 'PRA-005', 'PRA-001', 'PRA-002']
+
+test('naming a work item marks the practices its stage calls for, and others once it moves', (t) => {
   const { graph, tools } = practiceSurface([AUTHOR, REVIEWER], t)
 
-  // Two work items at two stages, and neither set is the whole domain — which is the only thing
-  // that makes computing the selection worth doing at all.
+  // Every agreed practice is in the block whichever item is named. What the situation decides is
+  // which of them are marked — and the marks are worth computing precisely because they move.
   const drafting = selectionFor(graph, 'WI-1043')
   assert.deepEqual(drafting.tags, ['stage:drafting'])
-  assert.deepEqual(ruleIds(drafting), ['PRA-001', 'PRA-002'])
-  assert.equal(drafting.total, 6, 'the denominator is what the domain vouches for, not what matched')
+  assert.deepEqual(ruleIds(drafting), AGREED)
+  assert.deepEqual(markedIds(drafting), ['PRA-001', 'PRA-002'])
+  assert.equal(drafting.total, 6, 'the denominator is what the domain vouches for')
+  assert.equal(drafting.available, 6, 'and naming no role means every one of them is available')
 
   const reviewing = selectionFor(graph, 'WI-1042')
   assert.deepEqual(reviewing.tags, ['stage:review'])
-  assert.deepEqual(ruleIds(reviewing), ['PRA-003', 'PRA-004', 'PRA-005'])
+  assert.deepEqual(ruleIds(reviewing), AGREED, 'and the same six, whatever stage the item is at')
+  // Five rather than three: a work item resolves to both deliverables, so a practice written about
+  // either one is marked as well as the three the stage names.
+  assert.deepEqual(markedIds(reviewing), ['PRA-003', 'PRA-004', 'PRA-005', 'PRA-001', 'PRA-002'])
   // Nobody typed the tag. It was read off the object, and the section says what it read, because a
   // computed situation has no other way to be checked.
   assert.match(
@@ -467,7 +478,17 @@ test('naming a work item selects the practices its stage calls for, and others o
     /WorkItem WI-1042 is in_review, which this domain maps to stage:review/,
   )
 
-  // The same item answers differently once it moves. This is the cycle turning, and the rules the
+  // Naming the product rather than the item is the same machinery with one half empty: a product
+  // has no state, so no stage tag, and the marks come from the constraint alone — which is why the
+  // two deliverables mark one practice each and not the same one.
+  const product = selectionFor(graph, 'DLV-WI-1043')
+  assert.deepEqual(product.tags, [])
+  assert.deepEqual(markedIds(product), ['PRA-001'])
+  const other = selectionFor(graph, 'DLV-WI-1042')
+  assert.deepEqual(other.tags, [])
+  assert.deepEqual(markedIds(other), ['PRA-002'], 'the practice written about this deliverable')
+
+  // The same item answers differently once it moves. This is the cycle turning, and the marks the
   // prompt carries turn with it.
   run(
     tool(tools, 'ontology_write'),
@@ -476,7 +497,8 @@ test('naming a work item selects the practices its stage calls for, and others o
   )
   const moved = selectionFor(graph, 'WI-1043')
   assert.deepEqual(moved.tags, ['stage:review'])
-  assert.deepEqual(ruleIds(moved), ['PRA-003', 'PRA-004', 'PRA-005'])
+  assert.deepEqual(ruleIds(moved), AGREED)
+  assert.deepEqual(markedIds(moved), ['PRA-003', 'PRA-004', 'PRA-005', 'PRA-001', 'PRA-002'])
 })
 
 test('a practice nobody has agreed to is in neither surface, and is not counted as vouched for', (t) => {
@@ -487,14 +509,15 @@ test('a practice nobody has agreed to is in neither surface, and is not counted 
   assert.ok(catalog.includes('practice-pra-001'), 'an agreed practice is loadable')
   assert.equal(catalog.includes('practice-pra-007'), false, 'and a candidate is not')
 
-  // PRA-007 is a candidate written for exactly this situation. Had it been agreed it would be
-  // selected here, so its absence is the lifecycle's doing rather than a routing accident.
+  // PRA-007 is a candidate written for exactly this situation. Had it been agreed it would be marked
+  // here, so its absence is the lifecycle's doing rather than a routing accident.
   const selection = selectionFor(graph, 'WI-1043')
   const rendered = renderSection(selection)
   assert.match(rendered, /PRA-001/)
   assert.doesNotMatch(rendered, /PRA-007/)
   assert.equal(selection.total, 6, 'a candidate is not in the denominator either')
-  assert.equal(selection.matched, 2)
+  assert.equal(selection.available, 6)
+  assert.deepEqual(markedIds(selection), ['PRA-001', 'PRA-002'])
 
   // The read tools draw the same line, from the same declaration — the catalog, the listing and a
   // read are one answer asked from three directions.
@@ -560,7 +583,7 @@ test('naming a work item that does not exist is reported, not quietly turned int
   // rule — that is the safe direction and it is deliberate. What must not happen is silence: the
   // report is the whole safeguard, so it has to reach the section the model reads.
   const selection = selectionFor(graph, 'WI-4040')
-  assert.equal(selection.matched, selection.total, 'an unstated situation is every vouched-for rule')
+  assert.equal(selection.available, selection.total, 'an unstated situation is every vouched-for rule')
   const rendered = renderSection(selection)
   assert.match(rendered, /Note for whoever configured this deployment/)
   assert.match(rendered, /nothing in this domain is identified as "WI-4040"/)

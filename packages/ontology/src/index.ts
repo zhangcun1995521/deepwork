@@ -405,9 +405,10 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
   //
   // This runs once at boot and again before every assembly, and the second one is the point. The
   // situation is derived from an object's state, and a state is the one part of this that moves
-  // during a session: work advances, a case goes to review, and what the agent must follow changes
-  // with it. Computing it at boot only would mean the world could change and the prompt would not,
-  // which is the exact failure the derived situation exists to avoid.
+  // during a session: work advances, a case goes to review, and which rules the platform marks moves
+  // with it — and the eviction order, on the day the budget binds. Computing it at boot only would
+  // mean the world could change and the prompt would not, which is the exact failure the derived
+  // situation exists to avoid.
   //
   // The cost is honest and small: `loadGraph` measures at 16ms against a few hundred instances, and
   // an assembly happens per model step. The re-read is also what makes a mid-session edit visible
@@ -442,14 +443,14 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
     warn(
       ctx,
       `the declared situation tag "${tag}" matches no rule in this domain; it is probably a ` +
-        `spelling mistake, and a tag that matches nothing selects nothing`,
+        `spelling mistake, and a tag that matches nothing marks nothing`,
     )
   }
 
-  // Registered whenever the domain vouches for anything — including when the situation selected
-  // none of it. That case is the one a reader most needs told: an empty selection and a mistyped
-  // tag are indistinguishable from inside the rule set, and only one of them is a mistake. A
-  // plugin that stayed silent when nothing matched would turn the loudest failure into the
+  // Registered whenever the domain vouches for anything — including when the situation marked none
+  // of it. That case is the one a reader most needs told: a section that marked nothing and a
+  // mistyped tag are indistinguishable from inside the rule set, and only one of them is a mistake.
+  // A plugin that stayed silent when nothing matched would turn the loudest failure into the
   // quietest.
   if (first.selection.total > 0) {
     ctx.inject?.(['systemPrompt'], (prompt: SystemPromptSurface) => {
@@ -477,7 +478,8 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
                   tags: [],
                   rules: [],
                   total: 0,
-                  matched: 0,
+                  available: 0,
+                  excluded: 0,
                   dropped: 0,
                   unknown: [],
                   trouble:

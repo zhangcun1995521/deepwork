@@ -24,7 +24,7 @@ flowchart TB
     d1["engine —— schema、graph、lifecycle"]
     d2["derivation —— 读、写和 action 工具"]
     d3["governance —— guard、permission、review、audit"]
-    d4["injection —— situation，以及它选出的规则"]
+    d4["injection —— situation，以及它打上标记的规则"]
     d5["capabilities —— 第二个插件，用来增加一种能力"]
   end
 
@@ -142,7 +142,7 @@ flowchart TB
   skill --> vouched
   life --> vouched
   vouched --> catalog["skill 目录，在加载时构建一次"]
-  vouched --> pool["当前 situation 的候选集"]
+  vouched --> pool["这个 role 可以遵守的每一条规则"]
 
   subgraph session["会话当前在做什么"]
     named["会话点名一个对象：WI-1042"]
@@ -154,11 +154,16 @@ flowchart TB
     named --> product
   end
 
-  tag --> pool
-  product --> pool
-  pool --> gates{"它约束了那些 product 之一，或者谁也不特别约束 —— 并且它与本案共享一个 tag，或者根本没声明 tag"}
-  gates -->|"两道闸门都打开"| injected["作为 rules block 写进 prompt"]
-  gates -->|"一道闸门关闭"| held["此处不需要，但仍然可以按名加载"]
+  statedRole["mode 声明的 role：role:author"]
+  pool --> roleGate{"它声明了本 role 的 tag，或者一个 role 都没声明"}
+  statedRole --> roleGate
+  roleGate -->|"是"| listed["列出来，并且带着自己的 tag 和它约束的 products"]
+  roleGate -->|"它声明的是别的 role"| other["在框架句里被计数，而不是无声地丢掉"]
+  listed --> mark{"它与本案共享一个非 role 的 tag，或者它约束了那些 product 之一"}
+  tag --> mark
+  product --> mark
+  mark -->|"命中其一"| marked["就地打上标记，并在框架句下面的索引行里再点一次名"]
+  mark -->|"两样都没命中"| unmarked["不带标记地列出来：当它指名的正是手上这份工作时，它同样是要求"]
 ```
 
 这个集合来自唯一一次遍历 `vouchedInstances`，两个表面都读它，理由很明确：用同一套标准再写一次遍历，今天会得出相同结果，但标准第一次变动时就会分道扬镳。决定成员资格的是 lifecycle 的 `default_state`——也就是 domain 称之为 vouched-for 的那个状态——所以"给读者看的东西"和"agent 可以加载的东西"是同一个答案被问了两次。一个声明了 `skill:` 却没有 `default_state` 的类型会被拒绝，而不是默认把每个实例都算进去，因为一个没说清哪个状态才算 vouched-for 的 domain，等于没有回答这个问题。`examples/agreed-practice` 就是示范：六条 practice 是 `verified`，三条是 `candidate`，这三条不在任何一个表面上，也不计入那六条之中。
@@ -167,21 +172,25 @@ flowchart TB
 
 **rules block** 不是 know-how。一条模型可以加载的规则，就是一条模型可以错过的规则，而"金额按整数比较"不是建议，所以同一个集合还有第二个表面：一个 prompt 段，注册为 `deepwork:experience`，渲染在 `<patterns>` 分隔符里面，好让一段 role prompt 能按名字引用这个 block，而不必去引一个本仓库随时可能改写的英文标题。它的位置不是选出来的，而是从宿主自己的 persona 段（`DEPLOYMENT_PERSONA_PREFIX`）推导出来的：身份先于义务被读到，义务先于工具被读到。它的文本是一个函数而不是一个字符串，所以每次组装都会重读一遍 domain 把它重建出来；说明这一点的注释就写在代码旁边，理由是：situation 是从状态推导出来的，而状态是这套东西里唯一会在会话进行中发生变化的部分。插值是关掉的——否则一条恰好含有花括号对的规则会把每一轮对话一起拖垮，因为注册表的 `{{variable}}` 引用是严格的，遇到一个未定义的就会抛错。
 
-这个 block 能承诺的是它不会被错过：无论模型想不想看，它都摆在模型面前。它不能承诺的是这些规则会被遵守，因为它终究只是文本。它也不能承诺自己完整：`budget` 以字符数给列出来的规则设了上限，超过这个上限时，被挡在外面的是那些最不具体的规则，而这一段会自己说明这一点，因为在 prompt 内部看，一条因为篇幅不够而没写进去的规则，和一条不适用的规则，是同一种缺席。被挡在规则块外面的那些，仍然以自己的名字留在 catalogue 里——这收窄的是被强加给 agent 的东西，而不是它可以读的东西。
+这个 block 能承诺的是它不会被错过：无论模型想不想看，它都摆在模型面前。它不能承诺的是这些规则会被遵守，因为它终究只是文本。它也不能承诺自己完整：`budget` 以字符数给列出来的规则设了上限，超过这个上限时，被挡在外面的是那些最不具体的规则，而这一段会自己说明这一点，因为在 prompt 内部看，一条因为篇幅不够而没写进去的规则，和一条只是排得更靠后的规则，是同一种缺席。被挡在规则块外面的那些，仍然以自己的名字留在 catalogue 里——这收窄的是被强加给 agent 的东西，而不是它可以读的东西。
+
+这个 block 刻意**不**把自己收窄到"本案要求的那几条"。每一行列出来的规则都带着它声明时用的 tag 和它约束的 products，读者因此能看出哪几条指的正是手上的工作；当前 situation 命中的那几条会就地打上标记，并在框架句下面的索引行里再点一次名，让注意力先落到它们身上。早先的版本是过滤而不是标记：一条规则要同时过 tag 闸门和 product 闸门才会被列出来，没过的就干脆不出现——而一次真实部署说明了这为什么行不通。一条 domain 专门为 Python 测试脚本写的规则，在 agent 正要动手写那个脚本的阶段里从 prompt 中消失了，因为闸门拿会话点名的 product 和规则点名的 product 比对，而两者只差一步。这件事没有任何地方报出来，因为在 block 内部，一条被省略的规则和一条根本不存在的规则长得一模一样。所以留下来的那道闸门，只管一个**声明出来**而不是**推断出来**的维度——role；它排除掉的那几条会在框架句里被计数，而不是无声地消失。
 
 有两种缺失会被报告出来，而不是渲染成一片沉默。一个 vouched-for 的对象，如果它被指名的字段是空的，就暴露不出任何 skill、也产生不了任何一行，原因会以一条 note 的形式说出来；而如果这个 domain 什么都没有担保，那就不会注册任何段，插件会说明原因，否则一个空段和一个无话可说的 domain 看起来会一模一样。
 
 ## situation 从何而来
 
-一条规则讲的是一样东西和一个时刻，这两半都是声明出来的，而不是敲进去的。domain 指名承载"我在做什么东西"的那个类型——`situation: { product_type: Deliverable }`——并把对象的状态映射到 tag 上——`state_tags: { WorkItem: { in_review: stage:review } }`。然后会话点名它正在做的那样东西，tag 随之而来。部署手工声明的 tag 会与由名字计算出来的 tag 合并，而不是被它们取代，这正是让 role——唯一一个任何状态都报告不出来的维度——仍然可以用于收窄的原因。
+一条规则讲的是一样东西和一个时刻，这两半都是声明出来的，而不是敲进去的。domain 指名承载"我在做什么东西"的那个类型——`situation: { product_type: Deliverable }`——并把对象的状态映射到 tag 上——`state_tags: { WorkItem: { in_review: stage:review } }`。然后会话点名它正在做的那样东西，tag 随之而来。部署手工声明的 tag 会与由名字计算出来的 tag 合并，而不是被它们取代，这正是让 role——唯一一个任何状态都报告不出来的维度——成为那道闸门的原因：名字算出来的东西一律是推断出来的，所以它只做标记和排序，而只有部署手工声明的那一半才能决定成员资格。
 
-在示例 domain 上，这条链短到可以一步步走完。一个会话声明它正在处理 `WI-1042`。`resolveActive` 找到带有这个 id 的对象，发现是个 `WorkItem`，读它的状态字段（`stage`）得到 `in_review`，再问 domain 这个状态意味着什么：`stage:review`。另外，它还会问那个 work item *是*哪些 product——也就是 `produced_as` 为 `WorkItem` 的那些 `Deliverable` 实例——得到 `DLV-WI-1042` 和 `DLV-WI-1043`，两个都算，因为这是关于这类东西的事实，而不是关于某一个实例的。接着 `selectRules` 从六条 vouched-for 的 practice 出发，施加两道闸门，每一道都因它自己那一侧没有声明而打开。product 这道闸门留下的是：约束了那两个具名 deliverable 之一的 practice，或者谁也没有特别约束的 practice。tag 这道闸门留下的是：与当前 situation 共享任意一个 tag 的 practice，或者一个 tag 都没声明的 practice。六条里活下来三条，而这一段也照实这么说：`3 of the 6 vouched-for rules apply here`。在它上面有一行记录 situation 从何而来——`Situation computed from: WorkItem WI-1042 is in_review, which this domain maps to stage:review`——这一行不是装饰。一个计算出来的 situation 没有别的办法可供检查：手敲的 tag 在 prompt 里看得见，而由状态推导出来的 tag 必须把那个状态一起带出来，否则一个错误的答案和一个正确的答案就无从分辨。换成点名 `WI-1043` 会选出两条规则，而直接点名 deliverable `DLV-WI-1042` 会选出五条，因为此时 tag 那一半是空的，只有 product 那道闸门在起作用。
+在示例 domain 上，这条链短到可以一步步走完。一个会话声明它正在处理 `WI-1042`。`resolveActive` 找到带有这个 id 的对象，发现是个 `WorkItem`，读它的状态字段（`stage`）得到 `in_review`，再问 domain 这个状态意味着什么：`stage:review`。另外，它还会问那个 work item *是*哪些 product——也就是 `produced_as` 为 `WorkItem` 的那些 `Deliverable` 实例——得到 `DLV-WI-1042` 和 `DLV-WI-1043`，两个都算，因为这是关于这类东西的事实，而不是关于某一个实例的。接着 `selectRules` 从六条 vouched-for 的 practice 出发，留下声明了本部署这个 role、或者一个 role 都没声明的那些，给"与当前 situation 共享一个非 role 的 tag"或"约束了那两个具名 deliverable 之一"的那些打上标记，而六条无论如何都被列出来。这一段也照实这么说：`6 of the 6 vouched-for rules are available to this role`，其中五条被标记。在它上面有一行记录 situation 从何而来——`Situation computed from: WorkItem WI-1042 is in_review, which this domain maps to stage:review`——这一行不是装饰。一个计算出来的 situation 没有别的办法可供检查：手敲的 tag 在 prompt 里看得见，而由状态推导出来的 tag 必须把那个状态一起带出来，否则一个错误的答案和一个正确的答案就无从分辨。换成点名 `WI-1043`，标记的是同样六条里的两条；而直接点名 deliverable `DLV-WI-1042`，只标记一条，因为此时 tag 那一半是空的，打标记的活儿全落在约束上。
 
-规则的约束是从 domain 声明的关系上读出来的，而不是从 engine 认得的某个字段名读出来的：一条规则约束的是它指向 `product_type` 的那些链接所指向的 products，无论那条关系叫什么名字。把 `governs` 改名成 `constrains` 对 engine 没有任何代价，而一个根本没有声明 product type 的 domain 也不算错误——product 那道闸门保持打开，state tag 照样工作，因为这两个声明彼此独立。
+role 这个维度被排除在标记之外，而不是被数第二遍，差别在一个部署只声明了 role、别的什么都没说的那一刻就看得见。一条规则能过那道闸门，靠的正是它共享了本部署的 role，所以再把同一个维度读成"说明这份工作是什么"的证据，就会把列出来的每一条都标上——每一行都有标记，而这个数字描述的其实是"列出来了几条"。所以一个没有推断那一半的 situation 什么都不标记，而这一段会用一个句子给出理由，而不是打印一个零：没有阶段、也没有 product，标记就无从谈起，而"0 of 46"是一个会让读者停下来去找背后的东西的数字。
 
-排序被决定了两次，而且理由不同。排名（ranking）决定的是当预算开始起作用时*谁能进来*：排名就是这条规则被 situation 真正钉住了多少个维度，product 算一个维度，每个 tag 维度各算一个，所以一条为这个 product、这个 role、这个阶段写的规则，排在一条只点名了 role 的规则前面。渲染决定的是*它们被读到的顺序*：先按标题，再按 id，所以同一个 situation 每次渲染出的 prompt 都一样。两者都在 `selectRules` 里，而且在预算真正开始起作用的那天之前，都看不出来。
+规则的约束是从 domain 声明的关系上读出来的，而不是从 engine 认得的某个字段名读出来的：一条规则约束的是它指向 `product_type` 的那些链接所指向的 products，无论那条关系叫什么名字。把 `governs` 改名成 `constrains` 对 engine 没有任何代价，而一个根本没有声明 product type 的 domain 也不算错误——没有 product type，就没有东西可以拿去做 product 那一半的标记，而 state tag 照样工作，因为这两个声明彼此独立。
 
-不自动的部分，和自动的部分一样有价值。模型是不被路由的：这里决定的只是 catalogue 和 block 里有什么，而不是它们会不会被用上。catalogue 在加载时构建，所以在同一进程中被晋升的 experience 要等下一次启动之后才出现——晋升足够罕见，每轮重新注册一百个 skill 得不偿失——而 block 则是每次组装都重算，理由正好相反。一个 product id 直接点名一个 product，不提供任何 tag，因为 product 没有状态，凭空给它编一个阶段，恰恰就是这套机制想要取代的那种人肉猜测。domain 没有映射到任何 tag 的状态就产不出 tag；一个在会话中途变得不可读的 domain 会失去它的规则，并在这一段里说明这一点，而不是把每一轮对话一起拖垮。匹配不到任何规则的 tag，或者没有任何东西响应的 id，都会被报告出来，而不是变成一次空选择，因为从规则集内部看，一个拼写错误和一次真正的沉默长得一模一样，而其中只有一个是错误。而一个没有声明 situation 的部署，会拿到全部 vouched-for 规则而不是一条都没有：需求这种东西，最不该因为一次意外而遭到筛选。
+排序被决定了两次，而且理由不同。排名（ranking）决定的是当预算开始起作用时*谁先出去*：排名就是这条规则被 situation 真正钉住了多少个维度，product 算一个维度，每个 tag 维度各算一个——role 也在其中，尽管标记不算它——所以一条为这个 product、这个 role、这个阶段写的规则，排在一条只点名了 role 的规则前面，而一条 situation 一个维度都没钉住的规则，无论标记与否，都是最先被去掉的那个。渲染决定的是*它们被读到的顺序*：先按标题，再按 id，标记永远不会改变这个顺序，所以同一个 situation 每次渲染出的 prompt 都一样。两者都在 `selectRules` 里，而排名的效果在预算真正开始起作用的那天之前，都看不出来。
+
+不自动的部分，和自动的部分一样有价值。模型是不被路由的：这里决定的只是 catalogue 和 block 里有什么，而不是它们会不会被用上。catalogue 在加载时构建，所以在同一进程中被晋升的 experience 要等下一次启动之后才出现——晋升足够罕见，每轮重新注册一百个 skill 得不偿失——而 block 则是每次组装都重算，理由正好相反。一个 product id 直接点名一个 product，不提供任何 tag，因为 product 没有状态，凭空给它编一个阶段，恰恰就是这套机制想要取代的那种人肉猜测。domain 没有映射到任何 tag 的状态就产不出 tag；一个在会话中途变得不可读的 domain 会失去它的规则，并在这一段里说明这一点，而不是把每一轮对话一起拖垮。匹配不到任何规则的 tag，或者没有任何东西响应的 id，都会被报告出来，而不是被静默略过，因为从规则集内部看，一个拼写错误和一个任何规则都没点名的 situation 长得一模一样，而其中只有一个是错误。而一个没有声明 situation 的部署，会拿到全部 vouched-for 规则而不是一条都没有：需求这种东西，最不该因为一次意外而遭到筛选。
 
 ## capability 层
 
@@ -250,7 +259,8 @@ persona 属于 preset，不属于 ontology，代码在声明某个 mode 的 prom
 | 规则是建议。skill 长不出手来，而 guard 照旧拒绝它原来拒绝的那些写入。 | `skills.ts` |
 | rules block 是文本，当预算开始起作用时，它把最不具体的规则挡在外面。被挡在外面的那些仍然可以按名加载。 | `inject.ts`, `index.ts` |
 | `budget` 度量的是列出来的那些规则，不包括它们外围的框架文字；而 `0` 按字面理解是"不注入任何规则"，不是"没有上限"。 | `inject.ts`, `cordis.patch.yml` |
-| product 没有状态，所以点名一个 product 不提供任何 situation tag；domain 没有映射到的状态产不出 tag；没有 `product_type` 的 domain 会让 product 那道闸门保持打开。 | `inject.ts` |
+| product 没有状态，所以点名一个 product 不提供任何 situation tag；domain 没有映射到的状态产不出 tag；没有 `product_type` 的 domain 就没有东西可以拿去做 product 那一半的标记。 | `inject.ts` |
+| 声明了本部署不是的那个 role 的规则会被排除在外；排除了几条会写在框架句里，而那条规则仍然可以按名加载。任何从状态推断出来的东西都不会排除规则。 | `inject.ts` |
 | 从状态推导出来的 situation，其质量只取决于那个状态字段，而该字段为空时会回退到 lifecycle 的 `initial`。 | `stateOf`, `inject.ts` |
 | role 解析是基于前缀的，所以一个按 id 形态定义的 role 映射会继承宿主的命名；前缀 `*` 是直接声明 role，而不是推断它。 | `govern/permission.ts` |
 | domain 格式是本仓库自己的。它不是标准，也没有迁移工具。 | `packages/ontology/README.md` |
@@ -260,7 +270,7 @@ persona 属于 preset，不属于 ontology，代码在声明某个 mode 的 prom
 | 路径 | 它是什么 |
 |---|---|
 | `packages/ontology/src/index.ts` | 插件：它挂载什么、按什么顺序挂载，以及某条接缝缺失时它会怎么做 |
-| `packages/ontology/src/inject.ts` | situation、选择过程，以及渲染出来的 block |
+| `packages/ontology/src/inject.ts` | situation、选择与标记，以及渲染出来的 block |
 | `packages/ontology/src/skills.ts` | 同一个声明的另一半：catalogue，以及两个表面共用的 vouched-for 遍历 |
 | `packages/ontology/src/engine/schema.ts` | domain 可以声明什么，以及什么只是警告而不是失败 |
 | `packages/ontology/src/engine/graph.ts` | 实例、推导出的边、那两个索引，以及原地刷新 |

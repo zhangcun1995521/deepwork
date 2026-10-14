@@ -30,6 +30,13 @@ Two loops, and this is the smallest shape that holds both:
 | `governs` + `practices_governing` | "which practices govern this deliverable", both directions |
 | `written_by` and the transitions | who may write a practice, who may agree to it, who may send work back |
 
+The interesting half is what naming a work item *does*. It does not narrow that section: an
+inference about the work — a stage read off an object's state, a product read off the kind of thing
+it is — must not be able to take a requirement out of a prompt. So the situation marks instead. The
+block carries every practice the deployment's role may follow, each line with the tags it was
+declared under and the products it was written about, and the ones the situation calls for are
+marked in place and named once more in an index line under the framing.
+
 None of it is code in this directory. The plugin reads these declarations, and the engine was not
 changed to read this domain.
 
@@ -49,9 +56,10 @@ DEEPWORK_ONTOLOGY_ACTIVE=WI-1042 dsh headless \
   "Quote the section of your prompt headed 'Rules this domain vouches for', then review the change I am working on."
 ```
 
-`WI-1042` is `in_review`, so that section carries three of the six vouched-for practices:
-`PRA-003`, `PRA-004`, `PRA-005`. Name the other work item instead — `WI-1043` is still `draft` — and
-the same prompt carries a different two, `PRA-001` and `PRA-002`:
+`WI-1042` is `in_review`, so the marks in that section are five of the six vouched-for practices:
+the three the stage names, `PRA-003`, `PRA-004` and `PRA-005`, and the two written about the
+deliverables the item is. Name the other work item instead — `WI-1043` is still `draft` — and the
+same prompt carries the same six with a different two marked, `PRA-001` and `PRA-002`:
 
 ```sh
 DEEPWORK_ONTOLOGY_ACTIVE=WI-1043 dsh headless \
@@ -60,13 +68,14 @@ DEEPWORK_ONTOLOGY_ACTIVE=WI-1043 dsh headless \
 
 Neither command mentions a stage, and neither does the prompt. The section says where the situation
 came from (`Situation computed from: WorkItem WI-1042 is in_review, which this domain maps to
-stage:review`) and how much of the domain it is showing (`3 of the 6 vouched-for rules apply
-here`), because a situation computed from a state has no other way to be checked.
+stage:review`) and that it left nothing out (`6 of the 6 vouched-for rules are available to this
+role`), because a situation computed from a state has no other way to be checked.
 
 It also names both deliverables (`Working on DLV-WI-1042, DLV-WI-1043`), which is worth knowing
 rather than wondering about: a work item resolves to the products that a work item *is*, and that is
-a fact about the kind of thing rather than about the one instance. The stage tag is what narrows
-what follows from there.
+a fact about the kind of thing rather than about the one instance. It is also why `WI-1042` marks
+five practices and `WI-1043` marks two — a practice written about either deliverable is marked
+whenever that work item is named.
 
 None of the three `candidate` practices appears in any of that. They are not skills the agent can
 load, they are not lines in the section, and they are not in the count of six — one `default_state`
@@ -82,10 +91,11 @@ export DEEPWORK_ONTOLOGY_ROLES='[{"prefix":"session-","role":"author"}]'
 ```
 
 As an `author`, ask the agent to submit `WI-1043` for review. Nothing about the prompt was
-reconfigured, and the next turn's section carries the three review practices instead of the two
-drafting ones, because the prompt is rebuilt for every assembly. Point the deployment at the
-reviewer instead and ask it to send the change back — and to fix the one thing it would rather see
-changed:
+reconfigured, and the next turn's section marks the three review practices on top of the two it
+already marked — five marks where a `draft` item had two, since a practice written about a
+deliverable the item is stays marked at every stage. The prompt is rebuilt for every assembly, so
+that is the whole of the change. Point the deployment at the reviewer instead and ask it to send the
+change back — and to fix the one thing it would rather see changed:
 
 ```sh
 export DEEPWORK_ONTOLOGY_ROLES='[{"prefix":"session-","role":"reviewer"}]'
@@ -100,16 +110,20 @@ it.
 
 ### Naming the product instead
 
-A product has no state, so it supplies no tag — and the product gate is then the only thing
-selecting:
+A product has no state, so it supplies no tag — and the constraint is then the only thing marking:
 
 ```sh
 DEEPWORK_ONTOLOGY_ACTIVE=DLV-WI-1042 dsh headless "..."
 ```
 
-Five of the six, this time: `PRA-001` is written about `DLV-WI-1043` and naming the other
-deliverable leaves it out. That is the difference between a practice that governs the thing being
-made and a practice that governs something else — sayable as a query rather than as a convention.
+Still all six, and one of them marked: `PRA-002` is the practice written about `DLV-WI-1042`. Naming
+`DLV-WI-1043` instead marks `PRA-001` and nothing else, which is the difference between a practice
+that governs the thing being made and a practice that governs something else — sayable as a query
+rather than as a convention.
+
+The six are listed under either name, because being unmarked is not being excluded. A practice is a
+requirement whenever the work at hand is what it names; the mark is the platform saying "this one,
+now", and a rule it cannot see the situation for is not a rule that has stopped applying.
 
 ## Declaration forms worth copying
 

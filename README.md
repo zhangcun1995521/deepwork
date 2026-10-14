@@ -60,7 +60,7 @@ flowchart TB
     eng["the engine — reads the domain, builds the graph, derives the edges"]
     der["derivation — the read tools and query modes, the write tool, declared actions, the lifecycle's requirements"]
     gov["governance — the guard mounted globally in front of every call, permissions derived from written_by, review checked against provenance, an audit of field names and never field values"]
-    inj["injection — the rules the situation selects, in the prompt and in the catalogue"]
+    inj["injection — the rules the situation marks, in the prompt and in the catalogue"]
     cap["a capability — a second plugin, declaring what its tools touch"]
   end
 
@@ -146,7 +146,7 @@ DSH provides                    DeepWork adds
 ──────────────                  ──────────────
 agent loop                      ontology    entities, relations, declared queries
 tools                           governance  written_by, file_location, required_fields
-skills                          injection   the vouched-for rules a situation obliges
+skills                          injection   the vouched-for rules, marked for the situation in hand
                                 audit       every write attempt, refusals included
 workflow
 plan mode
@@ -237,7 +237,7 @@ objects
 
 That second run is a governance model in fifteen lines, and not one of them was written by
 hand: it is the domain, read back. The enforcement behind those lines is described under
-[Governance](#governance) and checked by 344 tests.
+[Governance](#governance) and checked by 352 tests.
 
 ## What it looks like when an agent uses it
 
@@ -267,12 +267,12 @@ Working and demonstrated, not finished.
 | Declared-domain validation — an exit code a pipeline can read | ✅ a sound domain passes, a malformed one fails naming the declaration that was dropped |
 | Example domains — five of them, one mechanism each | ✅ end to end; the fifth describes the systems outside the deployment, and is the first to declare a `tool_grants` entry |
 | Capability layer — a second plugin that adds an ability | ✅ three packages: a project's tests, a language server, and the lineage around a session; two declare what they touch, and the third is a read that declares nothing |
-| Mode role — who a mode's agents are, and the prompt they work under | ✅ its own package; it registers no tool, and the role it publishes is what selects the rules the mode must follow |
+| Mode role — who a mode's agents are, and the prompt they work under | ✅ its own package; it registers no tool, and the role it publishes is the one filter the rules block applies |
 | Architecture — the route written down | ✅ `docs/architecture.md`, with each limit named beside the file that states it |
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-344 tests in total.
+352 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
@@ -410,7 +410,7 @@ domain was put through. `packages/ontology/tests/fixtures/ahead-of-its-data` now
 | `packages/ontology/examples/project-delivery` | a complete synthetic domain to point at |
 | `packages/ontology/examples/lessons` | the experience loop as a domain: a lesson arrives as a `candidate`, reads return only what somebody else upheld, and counting applications is a grant apart from writing one |
 | `packages/ontology/examples/engagement` | a staged delivery: four phases, and the customer's signature scoped to the stage it opens, so the road opens one gate at a time |
-| `packages/ontology/examples/agreed-practice` | the injection as a domain: a practice is a candidate until somebody else agrees to it, and naming a work item selects which agreed practices reach the prompt — the one example that exercises `situation` |
+| `packages/ontology/examples/agreed-practice` | the injection as a domain: a practice is a candidate until somebody else agrees to it, and naming a work item marks which agreed practices the situation calls for — the one example that exercises `situation` |
 | `packages/ontology/examples/outside-systems` | the enterprise outside the deployment: the systems it must talk to, the routes that reach them with the pitfalls on each, and who may call a tool that reaches one — the one example that exercises `tool_grants` |
 | `packages/test-runner` | a capability: run a project's tests and read what the run said (see its README) |
 | `packages/session-query` | a capability the host does not ship yet: the lineage around one session, so an agent can pick up what another started |
@@ -585,13 +585,23 @@ So the vouched-for set has a second surface, and it is the same set: the `skill`
 which field carries the routing tags (`when_to_use`) and which carries the heading a listing
 groups by (`group_by`), and the plugin registers one prompt section built from them.
 
-Which of the rules land in that section is the deployment's situation, and a situation has two
-halves — because a rule is about *a thing* and *when*:
+The situation says what the platform can see of the work, and it has two halves — because a rule is
+about *a thing* and *when*:
 
 ```bash
 DEEPWORK_ONTOLOGY_ACTIVE="CASE-1042"    # what you are working on — the stage follows from it
-DEEPWORK_ROLE="analyst"                 # who you are — the mode states it, and the situation carries it as a tag
+DEEPWORK_ROLE="analyst"                 # who you are — the mode states it, and it is the half that filters
 ```
+
+What the situation decides is *what gets marked*; what it deliberately does not decide is what the
+section carries. That distinction is the whole of the design, and it was learned from a live
+deployment rather than from a test: a rule the domain had written for the Python test script
+disappeared from the prompt during the stage where the agent was about to write that script, because
+the section filtered rules against the work the session had named, and the product the rule named
+and the product the session named disagreed by one step. Nothing reported the omission, because from
+inside the block an omitted rule and a rule that does not exist look the same. So the filter that is
+left is over the one half of a situation that is *declared* — the role the mode states — while the
+inferred halves mark and order.
 
 The first half is a declaration too, not a convention. The domain names the type that carries
 "what am I making" — `situation: { product_type: Deliverable }` — and a rule's constraints are its
@@ -620,36 +630,46 @@ right for a rule, and wrong for a deliverable, where it would hide every case th
 approved. So the states are tracked and the moves between them are enforced, and reads are
 unfiltered; the two uses of a lifecycle are one declaration but not one meaning.
 
-What this answers is not "what does the enterprise know" but **what does this moment require**,
-and the answer is computed from what the session is working on rather than chosen by the model. A
-search box answers "what might be relevant"; this answers "what applies here", and it is the same
-answer every time the situation is the same. The gap between those two questions is where a rule
-gets missed.
+What this answers is not "what does the enterprise know" but **what does this moment call for**, and
+the answer is computed from what the session is working on rather than chosen by the model. A search
+box answers "what might be relevant"; this answers "these are the ones to read first", and it is the
+same answer every time the situation is the same. The gap between those two questions is where a
+rule gets missed.
 
-More context is not the goal, either, and it is not free. Every rule that reaches the prompt
-competes for attention with the task itself; a rule that is merely *available* competes for
-nothing. So the mechanism is built to keep that distinction explicit rather than to maximise what
-is loaded — injected is what a person signed off on and the situation demands, and everything else
-stays one lookup away, named and countable rather than gone.
+More context is not the goal, either, and it is not free. Every rule that reaches the prompt competes
+for attention with the task itself, which is what the marking is for: the section lists every rule
+this role may follow — each line carrying the tags it was declared under and the products it was
+written about — and names the ones the situation calls for in an index line first, so attention lands
+on the rules that are certainly in play without the rest being taken away. What a role gate leaves
+out is counted in the framing rather than removed in silence, because a section that narrowed
+quietly would be indistinguishable from a domain with less to say.
 
-A rule applies when it clears two gates, each of which opens on what its side did not state: it
-constrains one of the products being worked on **or** constrains nothing in particular — "money is
-compared as integers" is not about any one deliverable and must survive naming one — and it shares
-any one tag with the situation, or declares none. Unstated means every vouched-for rule, because a
-requirement is the wrong thing to be selective about by accident. A tag that matches nothing, or an
-id nothing answers to, is reported rather than quietly yielding an empty section: from inside the
-rule set, a typo and a genuine silence look identical, and only one of them is a mistake.
+The gate that survived is the one over a *declared* dimension, and it opens on what its side did not
+state: a rule that declares a role this deployment is not is left out and counted; a rule that
+declares no role belongs to every role, because "nobody said who this is for" is not a claim that it
+is for somebody else; and a deployment that states no role gets everything, because a requirement is
+the wrong thing to be selective about by accident. The inferred half — the products and the stage —
+marks and orders and decides nothing, for the reason the Python-script rule disappeared: an inference
+can be wrong, and a wrong inference must not be able to delete a requirement. The role does not mark,
+and that is the same rule seen from the other side rather than an exception to it: sharing this
+deployment's role is what it meant for a rule to be listed at all, so counting that dimension a
+second time as evidence about the work marks every line, and a marker on every line is not a marker.
+A situation that states a role and nothing else therefore marks nothing — there is no inferred half
+for a marker to come from — and the section says that in a sentence, because a count of zero reads as
+a shortage and would send a reader looking for rules that were never withheld. A tag that matches
+nothing, or an id nothing answers to, is reported rather than quietly marking nothing: from inside the
+rule set, a typo and a situation no rule names look identical, and only one of them is a mistake.
 
 It also carries a ceiling, because a domain grows and a prompt does not. `DEEPWORK_ONTOLOGY_BUDGET`
 caps the listed rules in characters — 32000 by default, about 230 rules against the 71 this was
-built for, so it does not bind today. When it does bind, the ranking is what it spends: most rules
-carry a role tag, so a two-tag situation matches a large part of a domain and "matches" stops
-meaning anything on its own. The rank is how many dimensions the situation actually pins down — the
-product counts as one, each tag dimension as another — so a rule written for this product, role and
-phase outranks one that only names the role, and what is held back is the most general advice
-rather than whichever rule was listed last. That is also why the ceiling measures the list and not
-the framing around it: counting the framing would put the note that reports the omissions in
-competition with the rules it describes.
+built for, so it does not bind today. When it does bind, the ranking is what it spends: the rank is
+how many dimensions the situation actually pins down — the product counts as one, each tag dimension
+as another — so a rule written for this product, role and phase outranks one that only names the
+role, and a rule the situation pins down in no dimension at all is the first to go. What is held back
+is the most general advice rather than whichever rule was listed last, and it stays in the skill
+catalog under its own name. That is also why the ceiling measures the list and not the framing around
+it: counting the framing would put the note that reports the omissions in competition with the rules
+it describes.
 
 Three decisions worth naming, since each is a place the obvious thing is wrong:
 
@@ -666,17 +686,17 @@ Three decisions worth naming, since each is a place the obvious thing is wrong:
   brace pair would otherwise take every turn down with it. Pinned as far as this repository can pin
   it — the mount test asserts the flag on the registration, and what the host then does with the
   registration is the host's half.
-- **It registers even when the situation selects nothing.** Registering only when rules were
-  selected meant a mistyped tag produced no section at all, so the one case where the deployment
-  needs telling was the one case where it was told nothing. A live run found that, not the tests.
+- **It registers even when the situation marks nothing.** Registering only when rules were selected
+  meant a mistyped tag produced no section at all, so the one case where the deployment needs telling
+  was the one case where it was told nothing. A live run found that, not the tests.
 
-Verified end to end: the same question under two situations returns two different sets of
-must-follow rules, and a candidate is in neither. Naming an object id pulls the right product out of
-the ontology and the right subset of rules with it — and a rule that does not govern that product
-leaves the must-see set while staying in the skill catalog, which is the difference between "not
-required" and "withheld". With the ceiling set low enough to bind, the agent reports the count it
-was given, quotes the sentence saying what was held back, and answers yes when asked whether one of
-the held-back rules is still in its catalog.
+Verified end to end: the same question under two situations lists the same rules and marks different
+ones, and a candidate is in neither. Naming an object id pulls the right product out of the ontology
+and the marks that follow from it — and a rule the situation cannot see a fit for stays in the
+section, unmarked, and stays in the skill catalog, which is the difference between "not flagged for
+now" and "withheld". With the ceiling set low enough to bind, the agent reports the count it was
+given, quotes the sentence saying what was held back, and answers yes when asked whether one of the
+held-back rules is still in its catalog.
 
 ## Design notes
 

@@ -10,8 +10,8 @@ version: "1.0"
 #
 # What makes the pair worth reading together is the middle. The `situation` block below names the
 # type that carries "what am I making" and the states that mean which situation tag, so naming a
-# work item is enough to decide which of the agreed practices the plugin writes into the agent's
-# prompt. `WI-1042` and `WI-1043` select different sets because the two are at different stages, and
+# work item is enough to decide which of the agreed practices the plugin marks in the agent's
+# prompt. `WI-1042` and `WI-1043` are marked differently because the two are at different stages, and
 # neither number is a tag anybody had to remember.
 #
 # Everything here is synthetic: invented practices, invented products, invented work.

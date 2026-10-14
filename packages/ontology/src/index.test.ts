@@ -237,7 +237,7 @@ test('the section is recomputed for each assembly, so a promotion arrives withou
   // is what a per-assembly evaluation looks like from the outside.
   //
   // The fixture maps the two states onto tags the example's rules already use, so that the change
-  // is visible in what applies and not only in the sentence describing it.
+  // is visible in what the platform marks and not only in the sentence describing it.
   const root = mkdtempSync(join(tmpdir(), 'deepwork-live-'))
   cpSync(LESSONS, root, { recursive: true })
   t.after(() => rmSync(root, { recursive: true, force: true }))
@@ -257,7 +257,12 @@ test('the section is recomputed for each assembly, so a promotion arrives withou
   const before = h.readSection('deepwork:experience')
 
   assert.match(before, /Lesson LES-002 is candidate, which this domain maps to artifact:integration_client/)
-  assert.match(before, /0 of the 1 vouched-for rules/, 'one rule is vouched for, and none applies')
+  assert.match(before, /1 of the 1 vouched-for rules/, 'one rule is vouched for, and it is listed')
+  assert.match(
+    before,
+    /None of them is marked for this situation, because no rule here names what this deployment is working on/,
+    'the situation names something no vouched-for rule is about, and says so rather than counting zero',
+  )
 
   // Somebody upholds it. Nothing is restarted, and nothing is re-registered.
   const lesson = join(root, 'objects', 'lessons', 'LES-002.yaml')
@@ -266,8 +271,9 @@ test('the section is recomputed for each assembly, so a promotion arrives withou
   const after = h.readSection('deepwork:experience')
 
   assert.match(after, /Lesson LES-002 is verified, which this domain maps to artifact:pull_request/)
-  assert.match(after, /1 of the 2 vouched-for rules/, 'a rule that was not vouched for now is')
-  assert.match(after, /\*\*LES-001\*\* —/, 'and it is the one whose tag the new state selects')
+  assert.match(after, /2 of the 2 vouched-for rules/, 'a rule that was not vouched for now is')
+  assert.match(after, /Marked here, .*: LES-001\./, 'and it is the one whose tag the new state marks')
+  assert.match(after, /\*\*LES-001\*\* —/)
   assert.doesNotMatch(after, /is candidate, which this domain maps/)
   assert.notEqual(after, before, 'the two reads are genuinely different text')
 })
