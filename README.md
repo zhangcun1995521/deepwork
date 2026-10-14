@@ -510,8 +510,8 @@ Which of the rules land in that section is the deployment's situation, and a sit
 halves — because a rule is about *a thing* and *when*:
 
 ```bash
-DEEPWORK_ONTOLOGY_ACTIVE="CASE-1042"                         # what you are working on
-DEEPWORK_ONTOLOGY_SITUATION="role:analyst, phase:drafting"   # who you are, and at what
+DEEPWORK_ONTOLOGY_ACTIVE="CASE-1042"    # what you are working on — the stage follows from it
+DEEPWORK_ONTOLOGY_SITUATION="role:analyst"   # who you are; "at what" is no longer typed by hand
 ```
 
 The first half is a declaration too, not a convention. The domain names the type that carries
@@ -526,6 +526,20 @@ the domain stores a pointer rather than a copy.
 Naming the thing rather than the phase is the point. A phase is a vocabulary somebody has to
 remember and can get wrong in silence; `CASE-1042` is something they can see and copy, and the
 tags are computed from it. That is the whole of what was meant by the ontology knowing where it is.
+
+That extends to the stage itself. `situation: { state_tags: … }` says which state of which type
+stands for which tag, so the object answers "which stage am I at" rather than the person answering
+it — the half that used to be the easiest to get wrong in silence is now a fact read off the thing
+being worked on. The section prints what it read (`Situation computed from: Engagement E-7 is build, which
+this domain maps to stage:delivery`), because a computed situation has no other way to be
+checked: a tag somebody typed is visible in the prompt, and a tag derived from a state has to
+bring the state with it or a wrong answer is indistinguishable from a right one.
+
+A lifecycle declared for this purpose deliberately omits `default_state`. That field means "a read
+returns only this state", which is what makes a candidate invisible until somebody vouches for it —
+right for a rule, and wrong for a deliverable, where it would hide every case that is not yet
+approved. So the states are tracked and the moves between them are enforced, and reads are
+unfiltered; the two uses of a lifecycle are one declaration but not one meaning.
 
 What this answers is not "what does the enterprise know" but **what does this moment require**,
 and the answer is computed from what the session is working on rather than chosen by the model. A

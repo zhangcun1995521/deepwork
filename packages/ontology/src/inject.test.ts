@@ -336,8 +336,8 @@ test('a rule constrained to another product is the one naming a product rules ou
 test('an object id resolves to the product the domain says that kind of thing is', (t) => {
   const graph = loadGraph(productRules(t))
 
-  assert.deepEqual(resolveActive(graph, 'W-1'), { deliverables: ['DLV-GADGET'] })
-  assert.deepEqual(resolveActive(graph, 'DLV-GADGET'), { deliverables: ['DLV-GADGET'] })
+  assert.deepEqual(resolveActive(graph, 'W-1'), { deliverables: ['DLV-GADGET'], tags: [] })
+  assert.deepEqual(resolveActive(graph, 'DLV-GADGET'), { deliverables: ['DLV-GADGET'], tags: [] })
 })
 
 test('an id nothing answers to is reported rather than silently selecting nothing', (t) => {
@@ -346,6 +346,67 @@ test('an id nothing answers to is reported rather than silently selecting nothin
   const missing = resolveActive(graph, 'W-404')
   assert.deepEqual(missing.deliverables, [])
   assert.match(missing.note ?? '', /nothing in this domain is identified as "W-404"/)
+})
+
+test('an object answers which stage it is in, and says what it answered from', (t) => {
+  // The half a person used to type. The domain declares which state means which tag, so the tag
+  // that is easiest to get wrong in silence becomes a fact read off the object.
+  const root = productRules(t)
+  const schema = join(root, 'schema.yaml')
+  writeFileSync(
+    schema,
+    readFileSync(schema, 'utf-8')
+      .replace(
+        '  product_type: Deliverable',
+        '  product_type: Deliverable\n  state_tags:\n    Widget:\n      new: phase:building',
+      )
+      .replace(
+        /^  Widget:$/m,
+        '  Widget:\n    lifecycle:\n      field: state\n      initial: new\n      states: [new, done]',
+      )
+      .replace('      widget_id: { type: string }', '      widget_id: { type: string }\n      state: { type: string }'),
+  )
+  writeFileSync(join(root, 'objects', 'widgets', 'W-1.yaml'), 'widget_id: W-1\nstate: new\n')
+
+  const resolved = resolveActive(loadGraph(root), 'W-1')
+
+  assert.deepEqual(resolved.tags, ['phase:building'])
+  assert.match(resolved.because ?? '', /Widget W-1 is new, which this domain maps to phase:building/)
+  // And the section carries it, because a computed situation has no other way to be checked.
+  assert.match(
+    renderSection(selectRules(loadGraph(root), { deliverables: resolved.deliverables, tags: resolved.tags, because: resolved.because })),
+    /Situation computed from: Widget W-1 is new/,
+  )
+})
+
+test('a state the domain maps to nothing yields no tag, and says so rather than guessing', (t) => {
+  const root = productRules(t)
+  const schema = join(root, 'schema.yaml')
+  writeFileSync(
+    schema,
+    readFileSync(schema, 'utf-8')
+      .replace('  product_type: Deliverable', '  product_type: Deliverable\n  state_tags:\n    Widget:\n      new: phase:building')
+      .replace(
+        /^  Widget:$/m,
+        '  Widget:\n    lifecycle:\n      field: state\n      initial: new\n      states: [new, done]',
+      )
+      .replace('      widget_id: { type: string }', '      widget_id: { type: string }\n      state: { type: string }'),
+  )
+  // `done` is a declared state with no mapping — a gap in the domain, not a tag to invent.
+  writeFileSync(join(root, 'objects', 'widgets', 'W-1.yaml'), 'widget_id: W-1\nstate: done\n')
+
+  const resolved = resolveActive(loadGraph(root), 'W-1')
+  assert.deepEqual(resolved.tags, [])
+  assert.match(resolved.because ?? '', /which this domain maps to no tag/)
+})
+
+test('a declared tag and a computed one are merged, not one replacing the other', (t) => {
+  // A role is who the caller is, which is not a fact about the deliverable, so the deployment still
+  // states that half — and both halves must survive.
+  const graph = loadGraph(productRules(t))
+  const resolved = resolveActive(graph, 'DLV-GADGET')
+
+  assert.deepEqual([...new Set(['role:engineer', ...resolved.tags])], ['role:engineer'])
 })
 
 test('the product is named in the section, before the tags derived from it', (t) => {

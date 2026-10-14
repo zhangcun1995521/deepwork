@@ -186,6 +186,14 @@ export interface OntologySchema {
    */
   situationProduct?: string
   /**
+   * Which situation tag a type's state stands for: `Engagement` in `build` is `stage:delivery`.
+   *
+   * This is what lets an object answer "which stage is this" instead of a person answering it. The
+   * engine reads "this type in this state means this tag" and never learns what a stage or a phase
+   * is — the same shape as `product_type`, and for the same reason: a declaration, not a keyword.
+   */
+  situationStateTags?: Map<string, Map<string, string>>
+  /**
    * Who may call which tool, as the domain declares it.
    *
    * The other half of a tool's governance. A capability says what its tool touches; only the
@@ -521,6 +529,7 @@ export function parseSchema(root: string): OntologySchema {
   // Names a type that must exist, for the reason every other named field must: a declaration that
   // cannot take effect is the failure this project exists to catch rather than to ship.
   let situationProduct: string | undefined
+  const stateTags = new Map<string, Map<string, string>>()
   const rawSituation = document.situation
   if (rawSituation !== undefined && rawSituation !== null) {
     if (!isMapping(rawSituation)) {
@@ -535,6 +544,53 @@ export function parseSchema(root: string): OntologySchema {
           )
         } else {
           situationProduct = declared
+        }
+      }
+
+      // `state_tags`: which state of which type stands for which situation tag. Both halves are
+      // checked against declarations, because a mapping that names a type nobody declared, or a
+      // state its lifecycle does not have, is a tag that can never be produced — the failure this
+      // project reports rather than ships.
+      const rawStateTags = rawSituation.state_tags
+      if (rawStateTags !== undefined && rawStateTags !== null) {
+        if (!isMapping(rawStateTags)) {
+          warnings.push('"situation.state_tags" is not a mapping; ignored')
+        } else {
+          for (const [typeName, states] of Object.entries(rawStateTags)) {
+            const type = objectTypes.get(typeName)
+            if (type === undefined) {
+              warnings.push(
+                `"situation.state_tags" names type "${typeName}", which the schema does not ` +
+                  'declare; ignored',
+              )
+              continue
+            }
+            if (!isMapping(states)) {
+              warnings.push(`"situation.state_tags.${typeName}" is not a mapping; ignored`)
+              continue
+            }
+            const declaredStates = new Set(type.lifecycle?.states ?? [])
+            const mapping = new Map<string, string>()
+            for (const [state, tag] of Object.entries(states)) {
+              if (typeof tag !== 'string' || tag.length === 0) {
+                warnings.push(
+                  `"situation.state_tags.${typeName}.${state}" is not a tag; ignored`,
+                )
+                continue
+              }
+              if (!declaredStates.has(state)) {
+                warnings.push(
+                  `"situation.state_tags.${typeName}" names state "${state}", which that type's ` +
+                    'lifecycle does not declare; ignored — no object can ever be in it',
+                )
+                continue
+              }
+              mapping.set(state, tag)
+            }
+            if (mapping.size > 0) {
+              stateTags.set(typeName, mapping)
+            }
+          }
         }
       }
     }
@@ -572,6 +628,7 @@ export function parseSchema(root: string): OntologySchema {
     actionTypes: isMapping(document.action_types) ? document.action_types : {},
     actions,
     ...(situationProduct === undefined ? {} : { situationProduct }),
+    ...(stateTags.size === 0 ? {} : { situationStateTags: stateTags }),
     ...(toolGrants.size === 0 ? {} : { toolGrants }),
     raw: document,
     warnings,

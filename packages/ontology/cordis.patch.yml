@@ -36,7 +36,9 @@
         situation: !!js process.env.DEEPWORK_ONTOLOGY_SITUATION ?? ''
         # What this session is working on: an object id (`CASE-1042`) or a product id
         # (`DLV-RELEASE_NOTES`). This is the half a person can see and copy — the tags above are a
-        # vocabulary they have to remember, and naming the thing is not.
+        # vocabulary they have to remember, and naming the thing is not. The object's own state
+        # supplies the tag half the domain maps it to, so `situation` below narrows to what a
+        # state cannot say, which in practice is the role.
         active: !!js process.env.DEEPWORK_ONTOLOGY_ACTIVE ?? ''
         # Ceiling on the injected rules, in characters. A backstop, not a target: a domain grows
         # and a prompt does not, so the day they cross this has to already be in place. At 32000

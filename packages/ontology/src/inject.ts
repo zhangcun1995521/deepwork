@@ -23,7 +23,7 @@
  * @module @zhangcun123/ontology/inject
  */
 
-import type { OntologyGraph } from './engine/graph.ts'
+import type { OntologyGraph, OntologyObject } from './engine/graph.ts'
 import { text, vouchedInstances } from './skills.ts'
 
 /** One rule, as the prompt will carry it. */
@@ -76,6 +76,14 @@ export interface Selection {
   deliverables: string[]
   /** The tag half of the situation, in declaration order. */
   tags: string[]
+  /**
+   * Where the situation came from, when it was computed rather than declared.
+   *
+   * Carried through to the section for the reason the section states what it left out: a wrong
+   * answer has to be checkable from the prompt, and a tag derived from an object's state carries no
+   * record of that state unless it is written down beside it.
+   */
+  because?: string
   /** Rules to inject, grouped and in a stable order. */
   rules: InjectedRule[]
   /** Every vouched-for rule, whatever the situation. The denominator of "how many of how many". */
@@ -153,12 +161,30 @@ export interface Situation {
   deliverables: string[]
   /** The tag half: role, phase, and whatever else the domain tags its rules with. */
   tags: string[]
+  /** Where those tags came from, when they were computed rather than declared. Printed, not judged. */
+  because?: string
 }
 
 /** What resolving a named thing produced, and what to tell whoever named it. */
 export interface ActiveResolution {
   /** Products the named thing is, as `Deliverable` ids. */
   deliverables: string[]
+  /**
+   * Situation tags the named thing's own state stands for.
+   *
+   * The half a person used to write by hand. The domain declares which state of which type means
+   * which tag, so a state is asked of the object rather than remembered by whoever starts the
+   * session — and the tag that used to be the easiest thing to get wrong in silence is now a fact.
+   */
+  tags: string[]
+  /**
+   * Where those tags came from, for the section to print.
+   *
+   * Written out because an automatically derived situation has no other way to be checked. A
+   * person who typed a tag can see it in the prompt; a tag computed from a state has to carry the
+   * state with it, or a wrong answer looks exactly like a right one.
+   */
+  because?: string
   /**
    * Why nothing was resolved, when nothing was.
    *
@@ -169,12 +195,15 @@ export interface ActiveResolution {
 }
 
 /**
- * Resolve what a session says it is working on into the products it is working on.
+ * Resolve what a session says it is working on into the products it is working on, and the stage
+ * that thing is at.
  *
  * Two ways to name it, because a product does not always have an object behind it. A deliverable
- * id names the product directly — a pytest script never enters the ontology, since the domain
- * stores a pointer rather than a copy, so there is no object to point at. An object id names the
- * thing, and the product is whatever the domain says that kind of thing is (`produced_as`).
+ * id names the product directly — a generated report never enters the ontology, since the domain
+ * stores a pointer rather than a copy, so there is no object to point at, and no state either. An
+ * object id names the thing, and both halves are read off it: the product is whatever the domain
+ * says that kind of thing is (`produced_as`), and the tags are whatever the domain says that
+ * state means (`state_tags`).
  *
  * This is the whole of v2. The situation used to be a string a person wrote, which meant a person
  * had to remember the domain's tag vocabulary and got silence when they got it wrong. Naming the
@@ -182,31 +211,58 @@ export interface ActiveResolution {
  */
 export function resolveActive(graph: OntologyGraph, activeId: string): ActiveResolution {
   const id = activeId.trim()
-  if (id.length === 0) return { deliverables: [] }
+  if (id.length === 0) return { deliverables: [], tags: [] }
 
-  if (graph.byId.get(`Deliverable:${id}`) !== undefined) return { deliverables: [id] }
+  if (graph.byId.get(`Deliverable:${id}`) !== undefined) {
+    // A product with no object behind it has no state, so it contributes no tag. Said rather than
+    // guessed: inventing a stage for it would be the person-typed guess this replaces.
+    return { deliverables: [id], tags: [] }
+  }
 
   // An object id is bare, and `byId` is keyed by `${type}:${id}`, so the type has to be found
   // rather than assumed — the same reason the skill catalog derives its names instead of trusting
   // an id to be unique across types.
   const named = graph.objects.find((candidate) => candidate.id === id)
   if (named === undefined) {
-    return { deliverables: [], note: `nothing in this domain is identified as "${id}"` }
+    return { deliverables: [], tags: [], note: `nothing in this domain is identified as "${id}"` }
   }
+
+  const state = stateOf(graph, named)
+  const tag = state === undefined ? undefined : graph.schema.situationStateTags?.get(named.type)?.get(state)
 
   const deliverables = (graph.byType.get('Deliverable') ?? [])
     .filter((deliverable) => deliverable.data.produced_as === named.type)
     .map((deliverable) => deliverable.id)
 
+  const resolved: ActiveResolution = {
+    deliverables,
+    tags: tag === undefined ? [] : [tag],
+    ...(state === undefined
+      ? {}
+      : {
+          because:
+            `${named.type} ${named.id} is ${state}` +
+            (tag === undefined ? ', which this domain maps to no tag' : `, which this domain maps to ${tag}`),
+        }),
+  }
+
   if (deliverables.length === 0) {
     return {
-      deliverables: [],
+      ...resolved,
       note:
         `"${id}" is a ${named.type}, and no product in this domain says it is produced as one — ` +
         'give the session a product id from objects/deliverables instead',
     }
   }
-  return { deliverables }
+  return resolved
+}
+
+/** The state an instance is in, from its type's lifecycle declaration. */
+function stateOf(graph: OntologyGraph, object: OntologyObject): string | undefined {
+  const lifecycle = graph.schema.objectTypes.get(object.type)?.lifecycle
+  if (lifecycle === undefined) return undefined
+  const value = object.data[lifecycle.field]
+  return typeof value === 'string' && value.length > 0 ? value : lifecycle.initial
 }
 
 /** The routing tags an instance carries, when its declaration names the field and it holds any. */
@@ -358,6 +414,7 @@ export function selectRules(
   return {
     deliverables: [...situation.deliverables],
     tags: [...situation.tags],
+    ...(situation.because === undefined ? {} : { because: situation.because }),
     rules: kept,
     total: vouched.length,
     matched,
@@ -405,6 +462,7 @@ export function renderSection(selection: Selection): string {
     const tags = selection.tags.length === 0 ? '' : `; ${selection.tags.join(', ')}`
     lines.push(
       `${working}${tags}.`,
+      ...(selection.because === undefined ? [] : [`Situation computed from: ${selection.because}.`]),
       `${selection.matched} of the ${selection.total} vouched-for rules apply here; the rest`,
       'govern situations this deployment is not in, and are not withheld from you for any other',
       'reason.',

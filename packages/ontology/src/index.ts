@@ -364,11 +364,21 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
     warn(ctx, `the session named "${config.active ?? ''}" as what it is working on, but ${deliverablesResolved.note}`)
   }
 
+  // Declared tags first, derived ones after, deduplicated. A deployment may still state a tag the
+  // domain cannot compute — the role half is the obvious one, since a role is who the caller is and
+  // not a fact about the deliverable.
+  const declaredTags = parseSituation(config.situation ?? '')
+  const tags = [...new Set([...declaredTags, ...deliverablesResolved.tags])]
+
   const selection = selectRules(
     graph,
-    { deliverables: deliverablesResolved.deliverables, tags: parseSituation(config.situation ?? '') },
+    { deliverables: deliverablesResolved.deliverables, tags },
     config.budget === undefined ? {} : { budget: config.budget },
   )
+  // Carried into the section so a computed situation can be checked. A person who typed a tag can
+  // see it in the prompt; a tag derived from an object's state has to bring the state with it, or a
+  // wrong answer is indistinguishable from a right one.
+  if (deliverablesResolved.because !== undefined) selection.because = deliverablesResolved.because
   for (const tag of selection.unknown) {
     warn(
       ctx,
