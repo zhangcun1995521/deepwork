@@ -33,7 +33,17 @@ export type CaseStatus = 'passed' | 'failed' | 'error' | 'skipped'
  * over before it could check anything — the case worth looking at first, because it usually means
  * the test never exercised what it meant to.
  */
-export type FailureKind = 'assertion' | 'exception' | 'other'
+/**
+ * The kinds a failure can be, as one list.
+ *
+ * An array rather than a bare type union because the manual has to document exactly these, and a
+ * list the test can read is what keeps documentation from drifting away from behaviour. Adding a
+ * kind here and forgetting the manual fails a test instead of shipping a manual that is quietly
+ * incomplete.
+ */
+export const FAILURE_KINDS = ['assertion', 'exception', 'other'] as const
+
+export type FailureKind = (typeof FAILURE_KINDS)[number]
 
 /** One test, as the report recorded it. */
 export interface JunitCase {

@@ -392,6 +392,15 @@ project, not an object — so the grant is the whole of its authority, and a too
 with no grant is **refused** rather than licensed. "Nobody said who may call this" is the worse
 answer to give an execution tool.
 
+**A capability carries its own manual, and it arrives the same way a rule does.** A tool
+description says what a tool does; it has no room for the order to do things in, or for what a
+result does not mean. Those belong in a skill, contributed through the same seam the domain's
+vouched-for rules use — so know-how about a tool and know-how about a business reach the agent by
+one route, and a capability needs no change to the domain it is deployed beside. The manual is a
+string in the source rather than a file next to it, which is a decision made by evidence: this
+package ships `lib/**/*.js` and a markdown file would be absent from every install while working
+perfectly in the repository — the same silent-shape mistake this package has already made twice.
+
 Verified live, both directions on one call: as a role the domain did not grant, the call was
 refused with a message naming the role and the roles that may; as the granted role it ran and
 reported the project's own junit line. Both outcomes are in the audit trail, the refusal included.

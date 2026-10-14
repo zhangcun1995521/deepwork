@@ -74,8 +74,95 @@ export interface GovernanceSurface {
   ): () => void
 }
 
+/** The skill registry a profile provides, when it has one. */
+export interface SkillSurface {
+  skills: {
+    register(skill: {
+      name: string
+      description: string
+      whenToUse?: string
+      content: string
+      source: 'runtime'
+    }): () => void
+  }
+  /** Tie a contribution to this plugin's lifetime. */
+  effect?(callback: () => () => void, label?: string): void
+}
+
+/**
+ * The manual, kept in the source rather than shipped as a file beside it.
+ *
+ * A skill is prose, so a file would be the natural home — and `files` in this package's manifest is
+ * `lib/**​/*.js`, so a markdown file would be left out of the tarball unless the list changed too.
+ * That is the same shape of mistake as the two this package already made: it would work in the
+ * repository and be absent from every install, silently. Inlined, there is nothing to forget.
+ *
+ * It says how and when rather than what: the tool description already answers what. What is left
+ * for a manual is the part a description has no room for — that a failure and an error need
+ * different responses, that a green run whose suite never started is not green, and that reporting
+ * a run is a different act from making one.
+ */
+const MANUAL = `# Running this project's tests
+
+\`run_tests\` runs the project's configured command in its workspace and reads the report that
+command wrote. The command is deployment configuration, not something you supply — you choose only
+a target, a path relative to the workspace, which narrows the run to part of the suite.
+
+## Two fields, and they answer different questions
+
+\`status\` says whether the case ran — **passed**, **failed**, **skipped**, or **error**. The last
+one matters most: an \`error\` case never got as far as its body, so a fixture, an import or a
+collection problem stopped it. Nothing that case covers has been tested, whatever the rest of the
+report says.
+
+\`kind\` says how a **failed** case failed:
+
+- **assertion** — an \`assert\` disagreed. The code does not do what the test says it should.
+- **exception** — the test threw something that was not an assertion. It may have run most of the
+  way first; the message says where it stopped, and that is a different problem from a disagreement.
+- **other** — the case failed without naming an exception, which is what \`pytest.fail("…")\`
+  produces. Read the text; the report does not classify it, and neither should you.
+
+Triage orders cases that never ran first, then failures that threw, then failures that disagreed,
+then skips — because work that never ran has to be fixed before a failure means anything. Report
+both fields: a case that never ran is not the same finding as a case that disagreed. And do not
+report a run as passing on the strength of an exit code.
+
+## It reports; it does not record
+
+Nothing here writes to the ontology. Recording a run is a separate, governed write, and if your
+role may not make it, that write is refused — which is a fact about your role, not a failure of the
+run. Keep the two apart when you report: what the tests did, and what was written down about it.
+
+## Before you believe a green run
+
+A suite that never started reports zero failures. Check that the number of cases is what you
+expected, and treat a report with no cases in it as something to explain rather than a pass.
+`
+
 /** The name both packages state rather than import. */
 const GOVERNANCE_SERVICE = 'deepworkGovernance'
+
+/**
+ * The manual as the skill registry takes it.
+ *
+ * The description is the routing line — what the catalogue shows before anything is loaded — and
+ * the `whenToUse` is the part a reader needs to decide whether to open it at all. Both say *when*,
+ * because what the tool does is already a sentence in its own description; a manual that repeated
+ * that would be a second copy to keep in step.
+ */
+const MANUAL_SKILL = {
+  name: 'run-project-tests',
+  description:
+    'Run a project\u2019s test suite and read what the report said, separating a failed assertion '
+    + 'from an error that never reached one.',
+  whenToUse:
+    'Use before believing any claim about whether the code passes, and whenever a run failed and '
+    + 'you need to know what kind of failure it was. Not for writing or editing tests, and not for '
+    + 'deciding what to fix first — the kind on each case decides that, and this explains which.',
+  content: MANUAL,
+  source: 'runtime',
+} as const
 
 const DEFAULT_COMMAND = 'python -m pytest -q --junitxml=.junit.xml {target}'
 const JUNIT_FILE = '.junit.xml'
@@ -306,6 +393,31 @@ export function apply(ctx: TestRunnerContext, config: Config = {}): void {
     // compiled, and then called a method on a context that does not have one.
     governance([GOVERNANCE_SERVICE], (scoped: Record<string, GovernanceSurface>) => {
       scoped[GOVERNANCE_SERVICE]?.declareTool('run_tests', { executes: ['target'] })
+    })
+  }
+
+  // The capability's own know-how, offered where the agent already looks for it.
+  //
+  // A tool description says what a tool does; it has no room for the order to do things in, or for
+  // what a result does not mean. Those live here. Registered through the same seam the domain's
+  // vouched-for rules use, which is the point: know-how about a tool and know-how about a business
+  // are different sources reaching the agent the same way, and a capability that ships its own
+  // manual needs no change to the domain it is deployed beside.
+  const skills = ctx.inject
+  if (skills === undefined) {
+    warn(
+      'the runtime exposes no service lookup, so this capability cannot offer its manual as a ' +
+        'skill; the tools work and the guidance is missing',
+    )
+  } else {
+    skills(['skills'], (scoped: SkillSurface) => {
+      // `scoped` is the context carrying the service, not the service: `scoped.skills` is the
+      // registry and `scoped.effect` is the host's lifetime hook — the same shape the ontology
+      // plugin uses when it contributes its vouched-for rules through this seam.
+      scoped.effect?.(
+        () => scoped.skills.register(MANUAL_SKILL),
+        'test-runner: manual',
+      )
     })
   }
 }
