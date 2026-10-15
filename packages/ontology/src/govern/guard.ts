@@ -171,35 +171,41 @@ export function writeGuard(options: WriteGuardOptions): (call: GuardedCall) => s
       })
     }
 
-    // A tool that runs code is authorised by its grant and not by a directory: what it runs need
-    // not sit in the domain at all, and a directory rule borrowed from the domain would refuse the
-    // ordinary case of running a project's tests in a project. So the grant is the whole authority,
-    // and the domain saying nothing is a refusal rather than a licence — "nobody said who may call
-    // this" is the worse answer to give an execution tool.
-    if (executes.length > 0) {
-      if (grantedTo === undefined) {
+    // A tool that runs code is authorised by the programs it runs and not by a directory: what it
+    // runs need not sit in the domain at all, and a directory rule borrowed from the domain would
+    // refuse the ordinary case of running a project's tests in a project. The domain's entry for
+    // each program is the whole authority for that program, and the domain saying nothing is a
+    // refusal rather than a licence — "nobody said who may run this" is the worse answer to give
+    // an execution tool.
+    for (const program of executes) {
+      const granted = governance.programGrants?.[program]
+      if (granted === undefined) {
         return record({
           denied: true,
           role,
           reason: 'no-grant-declared',
           detail:
-            `${call.name} refused: it runs code (${executes.join(', ')}), and this domain declares ` +
-            'no tool_grants entry saying who may call it. Add one, or call it through a role the ' +
-            'domain grants.',
+            `${call.name} refused: it runs ${program}, and this domain declares no tool_grants ` +
+            'entry for that program. Grant it to a role that may call this tool, or stop the tool ' +
+            'from declaring it.',
         })
       }
-      if (!grantedTo.includes(role)) {
+      if (!granted.includes(role)) {
         return record({
           denied: true,
           role,
           reason: 'tool-not-granted-to-role',
           detail:
-            `${call.name} refused: role "${role}" is not in this domain's tool_grants for it ` +
-            `(${grantedTo.length === 0 ? 'nobody is' : grantedTo.join(', ')}).`,
+            `${call.name} refused: it runs ${program}, and role "${role}" is not in this domain's ` +
+            `tool_grants for that program (${granted.length === 0 ? 'nobody is' : granted.join(', ')}).`,
         })
       }
-    } else if (grantedTo !== undefined && !grantedTo.includes(role)) {
-      // A tool that declares paths and also carries a grant is held to both halves.
+    }
+    if (grantedTo !== undefined && !grantedTo.includes(role)) {
+      // The entry under the tool's own name narrows; it is not required. A domain that grants the
+      // programs and says nothing about the name has authorised everything the tool can run, while
+      // a domain that names the tool has restricted who may call it — and both readings are the
+      // deployment's to choose.
       return record({
         denied: true,
         role,

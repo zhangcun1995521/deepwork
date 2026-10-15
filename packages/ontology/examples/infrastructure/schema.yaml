@@ -1,0 +1,140 @@
+version: "1.0"
+
+# The infrastructure layer: what runs where, and what is wired to what.
+#
+# This file exists because a question nobody could previously ask is answerable once these types
+# exist: "something here is failing — what else is affected?" Answering it needs two things a
+# domain about work items and deliverables never had: the machines and services themselves, and
+# edges that say how a failure travels along them.
+#
+# Three things are worth reading this file for.
+#
+# The first is that a node is an ordinary object type. There is no `Node`, no node kind column, no
+# graph table: `Service`, `Cluster`, `Device` and `Rack` are types like any other, deriving the same
+# read tools and appearing in the same `type` enum. A separate graph layer would be a second place
+# where "what exists" is written down, and the second one is the one that goes stale.
+#
+# The second is that the arrow and the failure do not always point the same way. `depends_on` is
+# drawn from the dependent to what it depends on, and a failure at the *target* is what reaches the
+# source — the opposite direction from the arrow. `hosted_by` is drawn from the service to its
+# cluster, and there a failure at the target reaches the source the same way the arrow points.
+# Anybody reading these edges for impact has to know which is which, which is why each one says so
+# in its own description rather than leaving it to be inferred from the name.
+#
+# The third is the limit, and it is stated here rather than discovered later: the direction a
+# failure travels is *written down*, not computed. Nothing in this repository walks a failure
+# outward from an object — the read tools follow one relation, one hop, and no further — so the
+# impact half of the question above is a fact a person reads, not an answer a tool returns.
+
+object_types:
+  # A running service, in the sense the topology cares about: something that can be reached, can go
+  # down, and other services can depend on. Its `dependencies` field is what makes a chain possible;
+  # its `cluster` field is where it runs.
+  Service:
+    primary_key: service_id
+    required_fields: [service_id, name, environment, state]
+    file_location: objects/services/SVC-*.yaml
+    written_by: [curator]
+    fields:
+      service_id: { type: string, required: true }
+      name: { type: string, required: true }
+      # Which environment this instance of the service belongs to. A service in staging is a
+      # different object from the same service in production, because an incident in one is not an
+      # incident in the other.
+      environment: { type: string, required: true }
+      # What this service needs in order to work. The edge above is derived from this field, so the
+      # dependency exists because the service says so, not because somebody drew a line.
+      dependencies: { type: array, items: string }
+      # The cluster it runs on, for the same reason.
+      cluster: { type: string }
+      criticality: { type: string }
+      state: { type: string, required: true }
+    # A service can be retired without being deleted: the dependencies on it are part of the record
+    # of what used to be true, and a retired service is exactly the one a reader wants to be told
+    # about when asking what depends on it today.
+    lifecycle:
+      field: state
+      initial: active
+      default_state: active
+      states: [active, retired]
+      transitions:
+        retire: { from: [active], to: retired, by: [curator] }
+
+  # A group of machines that fail together — one control plane, one upgrade window, one blast
+  # radius. This is the type that makes "which services go down together" answerable.
+  Cluster:
+    primary_key: cluster_id
+    required_fields: [cluster_id, name, environment]
+    file_location: objects/clusters/CL-*.yaml
+    written_by: [curator]
+    fields:
+      cluster_id: { type: string, required: true }
+      name: { type: string, required: true }
+      environment: { type: string, required: true }
+      provider: { type: string }
+
+  # A machine. It carries no lifecycle: a device is either the one the inventory says it is or the
+  # inventory is wrong, and a state machine here would be a state machine nobody advances.
+  Device:
+    primary_key: device_id
+    required_fields: [device_id, name]
+    file_location: objects/devices/DEV-*.yaml
+    written_by: [curator]
+    fields:
+      device_id: { type: string, required: true }
+      name: { type: string, required: true }
+      cluster: { type: string }
+      rack: { type: string }
+      serial: { type: string }
+
+  # Where the machines physically are. The only type here whose edges end in a room rather than in
+  # software, which is the point: "the rack lost power" is a single fact with a wide blast radius,
+  # and it is discoverable from the graph rather than from a person who remembers the layout.
+  Rack:
+    primary_key: rack_id
+    required_fields: [rack_id, name, site]
+    file_location: objects/racks/RK-*.yaml
+    written_by: [curator]
+    fields:
+      rack_id: { type: string, required: true }
+      name: { type: string, required: true }
+      site: { type: string, required: true }
+
+link_types:
+  # A failure at the target reaches the source — against the arrow. Both halves are in the
+  # description because both are what a reader needs and neither can be derived from the other.
+  depends_on:
+    from: Service
+    to: Service
+    via: dependencies
+    description: >
+      What this service needs in order to serve. Drawn from the dependent to what it depends on,
+      so the arrow points one way and a failure travels the other: when the target is down, the
+      source is affected, and never the reverse.
+
+  # A failure at the target reaches the source — with the arrow.
+  hosted_by:
+    from: Service
+    to: Cluster
+    via: cluster
+    description: >
+      Where this service runs. A failure at the target reaches the source in the direction the
+      arrow already points: the cluster goes down and every service on it goes with it. This is
+      how a set of services that have nothing declared in common turn out to fail together.
+
+  in_cluster:
+    from: Device
+    to: Cluster
+    via: cluster
+    description: >
+      Which cluster this machine belongs to. A failure at the target reaches the source, with the
+      arrow: a cluster's control plane failing takes its machines out of service.
+
+  in_rack:
+    from: Device
+    to: Rack
+    via: rack
+    description: >
+      Which rack the machine sits in. A failure at the target reaches the source, with the arrow.
+      The only edge here that ends in the physical world, and the one with the broadest reach: one
+      rack losing power is one fact and every service on it is a consequence.

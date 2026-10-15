@@ -17,11 +17,12 @@ version: "1.0"
 # with a special case for "external" would be an engine that knows what an enterprise is; this one
 # only knows what a schema says, which is why this file is the whole cost of the example.
 #
-# The second is where reaching one is decided. `tool_grants` at the bottom names a tool that may
-# reach an outside system and the role that may call it — and the tool itself is deliberately not
-# in this repository. Connecting is a capability's work: the host's shell, an MCP server, a
-# connector somebody else wrote. The grant is where this deployment says who is allowed, and
-# nothing in this directory opens a socket, holds a credential, or reads a response.
+# The second is where reaching one is decided. `tool_grants` at the bottom names the program a
+# reaching tool starts and the tool itself, with the roles that may run and call them — and the
+# tool is deliberately not in this repository. Connecting is a capability's work: the host's
+# shell, an MCP server, a connector somebody else wrote. The grant is where this deployment says
+# who is allowed, and nothing in this directory opens a socket, holds a credential, or reads a
+# response.
 #
 # Everything here is synthetic: invented systems, invented interfaces, invented incidents.
 
@@ -157,16 +158,23 @@ functions:
     where: { status: confirmed }
 
 tool_grants:
-  # The one declaration here that says something about a tool which is not here.
+  # The two declarations here that say something about a tool which is not in this repository.
   #
   # A tool that touches something outside this domain has no directory in it to be judged against,
-  # so the grant is the whole of its authority — and a tool that declares itself through the
-  # governance channel with no grant entry is refused outright, because "nobody said who may call
-  # this" is the worse answer to give a tool that reaches out.
+  # so the grant is the whole of its authority — and a tool that declares the program it runs
+  # through the governance channel with no grant entry for that program is refused outright,
+  # because "nobody said who may run this" is the worse answer to give a tool that reaches out.
+  #
+  # The two entries do different jobs. `reach` is the program the connector starts, and an entry
+  # for a program is what the guard requires: which program runs is decided by the connector's own
+  # configuration, so the authority has to name it or a config edit would change what runs with
+  # nobody reviewing it. `reach_system` is the tool's own name, and an entry there only narrows —
+  # a domain that writes none lets the program entry decide alone.
   #
   # `engineer` wires the routes and is the role that acts on one. `curator` keeps the register and
   # decides what is confirmed, and is deliberately not granted: deciding a route is not the same
   # right as using it, which is the whole reason the two are declared in different places.
   # Nothing in this repository declares `reach_system`. It is what a connector would declare, and
-  # the grant is here waiting for it — this directory's README and its test show it enforced.
+  # the grants are here waiting for it — this directory's README and its test show them enforced.
+  reach: [engineer]
   reach_system: [engineer]

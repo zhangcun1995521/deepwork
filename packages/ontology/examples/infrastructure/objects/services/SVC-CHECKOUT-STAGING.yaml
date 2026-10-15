@@ -1,0 +1,7 @@
+service_id: SVC-CHECKOUT-STAGING
+name: checkout
+environment: staging
+dependencies: [SVC-PAYMENTS]
+cluster: CL-STAGING-01
+criticality: p3
+state: active

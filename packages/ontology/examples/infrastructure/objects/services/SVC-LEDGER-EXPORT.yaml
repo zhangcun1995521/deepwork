@@ -1,0 +1,7 @@
+service_id: SVC-LEDGER-EXPORT
+name: ledger-export
+environment: production
+dependencies: [SVC-PAYMENTS]
+cluster: CL-PROD-01
+criticality: p2
+state: retired

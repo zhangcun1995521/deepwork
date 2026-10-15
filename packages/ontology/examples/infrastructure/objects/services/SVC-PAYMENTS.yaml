@@ -1,0 +1,7 @@
+service_id: SVC-PAYMENTS
+name: payments
+environment: production
+dependencies: []
+cluster: CL-PROD-01
+criticality: p0
+state: active

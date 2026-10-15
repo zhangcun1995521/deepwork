@@ -93,9 +93,21 @@ test('a configured deployment gets its tools, its declaration, and its manual', 
     'a capability that registers nothing looks exactly like one that failed to load',
   )
   assert.deepEqual(h.declared, [
-    { tool: 'run_tests', access: { executes: ['target'] } },
+    { tool: 'run_tests', access: { executes: ['python'] } },
   ])
   assert.deepEqual(h.skills.map((skill) => skill.name), ['run-project-tests'])
+})
+
+test('the declared program is the first word of the configured command, not the default forever', () => {
+  // The command is deployment configuration, so the program declared to the guard has to follow
+  // it — a deployment running its suite through `npm` is judged on `npm`, and one that kept the
+  // default would be judged on `python`.
+  const h = harness()
+  apply(h.ctx, { workspace: WORKSPACE, command: 'npm test {target}' })
+
+  assert.deepEqual(h.declared, [
+    { tool: 'run_tests', access: { executes: ['npm'] } },
+  ])
 })
 
 test('the manual is a skill the registry would accept', () => {

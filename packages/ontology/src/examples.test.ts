@@ -695,12 +695,14 @@ test('a route nobody has walked is a candidate, and the read says how many it le
 test('reaching an outside system is a grant the domain declares, not a habit', (t) => {
   const { graph, root } = outside([ENGINEER, CURATOR], t)
 
-  // Wired the way the plugin wires it: the domain's own grants, and a tool that declares what it
-  // touches. `reach_system` is a connector's tool — nothing in this repository declares it, which
-  // is exactly why the grant has to be in the domain.
+  // Wired the way the plugin wires it: the domain's own grants, and a tool that declares the
+  // programs it runs. `reach_system` is a connector's tool — nothing in this repository declares
+  // it, which is exactly why the grant has to be in the domain, and why the entry the guard
+  // requires is for `reach`, the program the connector starts, with the tool's own name held to
+  // only as a narrowing.
   const registry = createGovernanceRegistry()
   registry.setGrants(graph.schema.toolGrants ?? new Map())
-  registry.declareTool('reach_system', { executes: ['client'] })
+  registry.declareTool('reach_system', { executes: ['reach'] })
 
   const decisions: GuardDecision[] = []
   const policy = writeGuard({
@@ -729,9 +731,10 @@ test('reaching an outside system is a grant the domain declares, not a habit', (
   // made for somebody else.
   assert.match(decisions.at(-1)?.detail ?? '', /engineer/)
 
-  // A tool that reaches out and finds no entry is refused rather than licensed — "nobody said who
-  // may call this" is the worse answer to give a tool that touches something outside the domain.
-  registry.declareTool('push_result', { executes: ['client'] })
+  // A tool that reaches out and finds no entry for the program it runs is refused rather than
+  // licensed — "nobody said who may run this" is the worse answer to give a tool that touches
+  // something outside the domain.
+  registry.declareTool('push_result', { executes: ['push'] })
   assert.match(
     policy({
       name: 'push_result',
@@ -797,4 +800,34 @@ test('a route becomes established only on a check from somebody who did not writ
   const result = run(tool(deriveTools(graph).tools, 'ontology_find'), { type: 'AccessRoute' }, 'anonymous')
   assert.deepEqual(ids(result).sort(), ['RT-001', 'RT-002', 'RT-003'])
   assert.equal(result.excludedByState, undefined)
+})
+
+test('the dependency chain reads one way, which is the half of impact that is answerable', (t) => {
+  // The `infrastructure` example exists for both halves of one question — what does this need, and
+  // what needs this — and to show that only the first one is answerable today. It is pinned here
+  // because the README says so: an example that quietly stopped demonstrating its own limit would
+  // leave the prose claiming something the code no longer does, which is the failure every other
+  // test in this file exists to prevent.
+  const graph = loadGraph(example('infrastructure'))
+  const tools = deriveTools(graph).tools
+  const links = (args: Record<string, unknown>) => run(tool(tools, 'ontology_links'), args, 'anonymous')
+
+  // With the arrow: the dependent names what it depends on, so this is the direction a read can go.
+  assert.deepEqual(ids(links({ relation: 'depends_on', from: 'SVC-CHECKOUT' })), ['SVC-PAYMENTS'])
+  // And the machines it runs on and sits in, which is where a shared failure comes from even when
+  // two services have nothing declared in common.
+  assert.deepEqual(ids(links({ relation: 'hosted_by', from: 'SVC-CHECKOUT' })), ['CL-PROD-01'])
+  assert.deepEqual(ids(links({ relation: 'in_cluster', from: 'DEV-01' })), ['CL-PROD-01'])
+  assert.deepEqual(ids(links({ relation: 'in_rack', from: 'DEV-01' })), ['RK-01'])
+
+  // Against the arrow — the question an incident actually asks, "payments is failing, what else is
+  // affected" — returns nothing. The traversal only goes forward, so this half is a fact a person
+  // reads off the relation rather than an answer the tool gives. Asserted, not merely described.
+  assert.deepEqual(ids(links({ relation: 'depends_on', from: 'SVC-PAYMENTS' })), [])
+
+  // The vouched-for state applies to infrastructure as it does everywhere else: a retired service
+  // is not part of what is running, and the count is reported rather than the list being short.
+  const services = run(tool(tools, 'ontology_find'), { type: 'Service' }, 'anonymous')
+  assert.deepEqual(ids(services).sort(), ['SVC-CHECKOUT', 'SVC-CHECKOUT-STAGING', 'SVC-PAYMENTS'])
+  assert.equal(services.excludedByState, 1)
 })

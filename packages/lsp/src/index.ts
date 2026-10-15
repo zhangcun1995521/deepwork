@@ -13,6 +13,8 @@
  * `@module @zhangchun123/lsp`
  */
 
+import { basename } from 'node:path'
+
 import { createLspRegistry } from './seam.ts'
 import type { LspService } from './seam.ts'
 import { launchEnvironment } from './connection.ts'
@@ -140,6 +142,9 @@ export function apply(ctx: LspContext, config: Config = {}): void {
   // Every server is resolved before any provider is registered, so a bad later entry cannot leave an
   // earlier one routable.
   const providers: LocalProvider[] = []
+  // The programs this deployment has configured the tool to start, deduplicated: two servers may
+  // name the same executable, and the guard asks which programs may run, not how many times.
+  const programs = new Set<string>()
   for (const [serverId, serverConfig] of entries) {
     if (serverId.trim() === '') throw new Error('lsp: server ids must be non-empty strings')
     const resolved = resolveServerConfig(serverId, serverConfig)
@@ -147,6 +152,9 @@ export function apply(ctx: LspContext, config: Config = {}): void {
     // finds the command it names.
     const executable = resolveExecutable(resolved.command, launchEnvironment(resolved.env))
     providers.push(createLocalProvider(serverId, resolved, executable))
+    // The basename of the command as written, which is the name a grant can be keyed by whichever
+    // way `resolveExecutable` reads it — as a path, or as a name searched on PATH.
+    programs.add(basename(resolved.command))
   }
 
   const registry: LspService = createLspRegistry()
@@ -196,24 +204,26 @@ export function apply(ctx: LspContext, config: Config = {}): void {
 
   ctx.logger?.info?.(`lsp: ${providers.length} language server(s): ${entries.map(([id]) => id).join(', ')}`)
 
-  // What this tool touches, told to the plugin that judges it.
+  // What this tool runs, told to the plugin that judges it.
   //
-  // It spawns a language server and reads the file it is asked about, and neither is visible to the
-  // guard without this — a tool the guard has never heard of is a tool it lets through, silently.
-  // The port shipped without it, which is the same hole the first capability had.
+  // It spawns the configured language servers and reads the file it is asked about, and neither is
+  // visible to the guard without this — a tool the guard has never heard of is a tool it lets
+  // through, silently. The port shipped without it, which is the same hole the first capability had.
   //
-  // `executes` and not `writes`: the file is read, never modified, and what needs authorising is the
-  // process. A tool that runs code is granted by the domain and by nothing else, so a deployment
-  // that has not said who may navigate gets a refusal rather than a free pass.
+  // `executes` names the programs, not an argument: which server runs is decided by this
+  // deployment's `servers` table, so that is what a grant has to name. A grant under the tool's
+  // name alone would say "this role may call lsp" and stay silent on which program starts — and a
+  // config edit would change the program with nobody reviewing it. With no server configured the
+  // tool is not registered at all, so there is no declaration to make.
   const governance = ctx.inject
   if (governance === undefined) {
     ctx.logger?.warn?.(
-      'lsp: the runtime exposes no service lookup, so this tool cannot declare what it touches ' +
+      'lsp: the runtime exposes no service lookup, so this tool cannot declare what it runs ' +
         'and is not governed by the write guard',
     )
   } else {
     governance([GOVERNANCE_SERVICE], (scoped: Record<string, GovernanceSurface>) => {
-      scoped[GOVERNANCE_SERVICE]?.declareTool('lsp', { executes: ['file_path'] })
+      scoped[GOVERNANCE_SERVICE]?.declareTool('lsp', { executes: [...programs] })
     })
   }
 }

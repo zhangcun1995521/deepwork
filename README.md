@@ -237,7 +237,7 @@ objects
 
 That second run is a governance model in fifteen lines, and not one of them was written by
 hand: it is the domain, read back. The enforcement behind those lines is described under
-[Governance](#governance) and checked by 353 tests.
+[Governance](#governance) and checked by 362 tests.
 
 ## What it looks like when an agent uses it
 
@@ -272,7 +272,7 @@ Working and demonstrated, not finished.
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-353 tests in total.
+362 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
@@ -309,7 +309,7 @@ And the honest half — what a reader will find missing:
 | Missing | Where it stands |
 |---|---|
 | One artefact showing a task start to finish — a recording, not a description | sessions are recorded as documents and refusals as audit entries, but there is no single thing a stranger can watch |
-| `deepwork init` — a domain to copy and rename | the five examples are the starter material |
+| `deepwork init` — a domain to copy and rename | the six examples are the starter material |
 | Validation on several real domains | one production domain has been through it — 17 object types, 269 instances, 214 relations — and that run is what put the two-level diagnostics in. One is not several |
 | A connector to an outside system | `examples/outside-systems` declares the systems, the routes and who may call a tool that reaches one; nothing in this repository makes the call, which is the boundary above rather than a gap |
 
@@ -412,6 +412,7 @@ domain was put through. `packages/ontology/tests/fixtures/ahead-of-its-data` now
 | `packages/ontology/examples/engagement` | a staged delivery: four phases, and the customer's signature scoped to the stage it opens, so the road opens one gate at a time |
 | `packages/ontology/examples/agreed-practice` | the injection as a domain: a practice is a candidate until somebody else agrees to it, and naming a work item marks which agreed practices the situation calls for — the one example that exercises `situation` |
 | `packages/ontology/examples/outside-systems` | the enterprise outside the deployment: the systems it must talk to, the routes that reach them with the pitfalls on each, and who may call a tool that reaches one — the one example that exercises `tool_grants` |
+| `packages/ontology/examples/infrastructure` | the machines and services and what is wired to what: four node kinds as ordinary object types, four relations that state which way a failure travels along them, and the honest limit that impact is written down rather than computed |
 | `packages/test-runner` | a capability: run a project's tests and read what the run said (see its README) |
 | `packages/session-query` | a capability the host does not ship yet: the lineage around one session, so an agent can pick up what another started |
 | `packages/lsp` | the same kind of stand-in: ask a language server where something is defined, instead of guessing from a text match |
@@ -436,23 +437,28 @@ inspecting write tools. With no roles configured, every write is refused — an 
 deployment is a read-only one rather than a permissive one. Its own limits are written down
 in the code (`UNCOVERED_BY_GUARD`) rather than left to be discovered.
 
-**A tool says what it touches, and the domain says who may call it.** The guard used to
+**A tool says what it touches, and the domain says who may run what.** The guard used to
 recognise tools by name: two constants, one for writers and one for shells. That governs
 exactly the tools its author knew about, so a capability added by another package was invisible
 to it — and invisibly, which is the worst way to be ungoverned. A first capability that runs a
 project's tests walked past a boundary that refuses the same write made through `write`: three
 names refused for touching `.junit.xml`, and the fourth doing the same thing let through. So a
-tool now declares its own arguments — which hold a path it writes, a path it runs what is in, or
-a command line — and the guard reads the declaration instead of a name. The host's own tools are
-described the same way, by a built-in table, so there is one mechanism rather than two.
+tool now declares its own surface — which arguments hold a path it writes or a command line, and
+which programs it starts — and the guard reads the declaration instead of a name. The host's own
+tools are described the same way, by a built-in table, so there is one mechanism rather than two.
 
 The other half has to come from the deployment, and it does: `tool_grants` names the roles that
-may call a tool. Only the domain knows who is allowed. It matters most for `executes`, because
-running code has no directory in the domain to be judged against — the target of a test run is a
-project, not an object — so the grant is the whole of its authority, and a tool that runs code
-with no grant is **refused** rather than licensed. "Nobody said who may call this" is the worse
-answer to give an execution tool. `examples/outside-systems` is the shipped domain that declares
-one, for the tool that reaches a system this deployment does not own.
+may run a program. Only the domain knows who is allowed, and the entry that carries the authority
+is the one keyed by program name — `test-runner` declares the first word of its configured command
+(`python`, by default) and `lsp` the basenames of its configured servers' commands, because which
+program runs is deployment configuration and a grant has to name it. Running code has no directory
+in the domain to be judged against — the target of a test run is a project, not an object — so a
+program with no grant is **refused** rather than licensed, and the refusal names the program.
+"Nobody said who may run this" is the worse answer to give an execution tool. An entry under the
+tool's own name is optional and only narrows: when the domain writes one, the caller's role must
+be in it as well; when it writes none, the program entries decide alone.
+`examples/outside-systems` is the shipped domain that declares them, for the tool that reaches a
+system this deployment does not own.
 
 **A capability carries its own manual, and it arrives the same way a rule does.** A tool
 description says what a tool does; it has no room for the order to do things in, or for what a

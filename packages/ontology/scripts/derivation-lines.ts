@@ -88,14 +88,15 @@ export function derivationLines(root: string, roles: RoleRule[] = []): string[] 
     }
   }
 
-  // Who may call a tool this domain does not own. Shown only when it is declared, like every other
-  // block here, so a domain that says nothing prints exactly what it printed before: the write tool
-  // and the guard are derived from `written_by`, and the grant is the other half of the policy —
-  // one that would otherwise be invisible in the one command the README points a reader at.
+  // What this domain grants over things it does not own: tools by name, and the programs those
+  // tools run. Shown only when it is declared, like every other block here, so a domain that says
+  // nothing prints exactly what it printed before: the write tool and the guard are derived from
+  // `written_by`, and the grants are the other half of the policy — one that would otherwise be
+  // invisible in the one command the README points a reader at.
   const grants = graph.schema.toolGrants
   if (grants !== undefined && grants.size > 0) {
     lines.push('')
-    lines.push('grants   who may call a tool this domain does not own')
+    lines.push('grants   who may call a tool or run a program this domain does not own')
     for (const [name, roles] of grants) {
       lines.push(
         `         ${name.padEnd(22)} ${roles.length === 0 ? '(nobody)' : roles.join(', ')}`,

@@ -14,6 +14,7 @@
  * reading rather than by running.
  */
 import assert from 'node:assert/strict'
+import { basename } from 'node:path'
 import { test } from 'node:test'
 
 import { apply, type LspContext } from './index.ts'
@@ -83,17 +84,51 @@ const SERVERS = {
   ts: { command: 'node', args: ['--version'], extensionToLanguage: { '.ts': 'typescript' } },
 }
 
-test('a configured deployment registers the tool and declares what it touches', () => {
+test('a configured deployment registers the tool and declares the programs it runs', () => {
   const h = harness()
   apply(h.ctx, { servers: SERVERS })
 
   assert.deepEqual(h.tools, ['lsp'], 'a plugin that registers nothing looks like one that failed')
   assert.deepEqual(
     h.declared,
-    [{ tool: 'lsp', access: { executes: ['file_path'] } }],
-    'and the guard is told, which is the difference between governed and merely governed in principle',
+    [{ tool: 'lsp', access: { executes: ['node'] } }],
+    'the guard is told the program the deployment configured, which is the difference between '
+      + 'governed and merely governed in principle',
   )
   assert.equal(h.sections.length > 0, true, 'the guidance the tool depends on reaches the prompt')
+})
+
+test('the declared programs are the configured commands, deduplicated', () => {
+  // Two servers may name the same executable, and the guard asks which programs may run — not how
+  // many servers start them. Declaring the same name twice would demand the same grant twice.
+  const h = harness()
+  apply(h.ctx, {
+    servers: {
+      ts: { command: 'node', args: ['--version'], extensionToLanguage: { '.ts': 'typescript' } },
+      web: { command: 'node', args: ['--version'], extensionToLanguage: { '.js': 'javascript' } },
+    },
+  })
+
+  assert.deepEqual(h.declared, [{ tool: 'lsp', access: { executes: ['node'] } }])
+})
+
+test('a command written as a path is declared by its basename', () => {
+  // A deployment may configure an absolute command, and the grant still has to be writable by a
+  // human: the basename is the name the program is known by however the command was spelled.
+  const h = harness()
+  apply(h.ctx, {
+    servers: {
+      node: {
+        command: process.execPath,
+        args: ['--version'],
+        extensionToLanguage: { '.ts': 'typescript' },
+      },
+    },
+  })
+
+  assert.deepEqual(h.declared, [
+    { tool: 'lsp', access: { executes: [basename(process.execPath)] } },
+  ])
 })
 
 test('an unconfigured deployment registers no tool and says why', () => {

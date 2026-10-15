@@ -1,0 +1,4 @@
+cluster_id: CL-PROD-01
+name: prod-eu-central
+environment: production
+provider: in-house

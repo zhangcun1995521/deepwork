@@ -1,0 +1,5 @@
+device_id: DEV-03
+name: prod-node-03
+cluster: CL-PROD-01
+rack: RK-02
+serial: SN-0003

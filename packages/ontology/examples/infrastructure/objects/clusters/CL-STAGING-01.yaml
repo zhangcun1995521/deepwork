@@ -1,0 +1,4 @@
+cluster_id: CL-STAGING-01
+name: staging-eu-central
+environment: staging
+provider: in-house

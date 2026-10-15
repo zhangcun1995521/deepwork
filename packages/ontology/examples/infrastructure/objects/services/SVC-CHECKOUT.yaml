@@ -1,0 +1,7 @@
+service_id: SVC-CHECKOUT
+name: checkout
+environment: production
+dependencies: [SVC-PAYMENTS]
+cluster: CL-PROD-01
+criticality: p0
+state: active

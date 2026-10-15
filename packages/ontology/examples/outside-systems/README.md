@@ -10,7 +10,7 @@ came from anywhere real, and nothing here is a real product.
 ## What it contains
 
 Three object types — `OutsideSystem`, `AccessRoute`, `RouteCheck` — two relations, one declared
-function, and one `tool_grants` entry. Eight instances: two systems, three routes (two
+function, and two `tool_grants` entries. Eight instances: two systems, three routes (two
 `confirmed`, one still `candidate`), and three checks.
 
 The shape is the argument. A domain that can only describe its own insides stops at the edge of
@@ -28,7 +28,7 @@ in this project is written down.
 | `lifecycle` + `default_state` on `AccessRoute` | reads return confirmed routes and say how many candidates they left out |
 | `requires_review` on `confirm` | confirming a route needs a `RouteCheck` saying `reachable`, produced by somebody other than the person making the move |
 | `routes_reaching` + its `where` | "which routes reach this system", which a traversal does not get the read's state filter for free |
-| `tool_grants` | which role may call a tool that reaches outside the deployment — the one example here that declares one |
+| `tool_grants` | which role may run the program a reaching tool starts, and call the tool by name — the one example here that declares either |
 
 None of it is code in this directory. The plugin reads these declarations, and the engine was not
 changed to read this domain.
@@ -164,9 +164,12 @@ functions:
     where: { status: confirmed }             # a traversal does not inherit the read's filter
 
 tool_grants:
-  reach_system: [engineer]                   # who may call the tool that reaches out
+  reach: [engineer]                          # who may run the program the connector starts
+  reach_system: [engineer]                   # who may call the tool by name — a narrowing
 ```
 
-The last line is the one to carry to a real domain. A tool that touches something outside the
-domain has no directory in it to be judged against, so this grant is the whole of its authority —
-and a domain that says nothing refuses it, rather than licensing it by silence.
+The last two lines are the ones to carry to a real domain. A tool that touches something outside
+the domain has no directory in it to be judged against, so the entry for the program it runs is
+the whole of that program's authority — and a domain that says nothing about a program refuses
+it, rather than licensing it by silence. The entry under the tool's own name only narrows who may
+call the tool; a domain that writes none lets the program entry decide.

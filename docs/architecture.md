@@ -112,10 +112,12 @@ flowchart TD
   touch -->|"at least one"| who{"3 — which role is calling?"}
   who -->|"no roles configured, or this caller matches none"| r0["refused: no-roles-configured, or no-role"]
   who -->|"a role"| runs{"4 — does the tool run code?"}
-  runs -->|"yes"| grant{"is that role in the domain's tool_grants for it?"}
-  grant -->|"no entry, or the role is not in it"| r1["refused: no-grant-declared, or tool-not-granted-to-role"]
-  grant -->|"yes"| dirs
-  runs -->|"no"| dirs{"5 — which directories may that role write?"}
+  runs -->|"yes"| grant{"4a — is that role in the domain's tool_grants for every program it declares?"}
+  grant -->|"a program has no entry, or the role is not in it"| r1["refused: no-grant-declared, or tool-not-granted-to-role, the program named"]
+  grant -->|"every program granted"| name
+  runs -->|"no"| name{"4b — does the domain grant this tool by name?"}
+  name -->|"it does, and the role is not in it"| r1
+  name -->|"it does not, or the role is"| dirs{"5 — which directories may that role write?"}
   dirs -->|"none, and the tool writes or redirects"| r2["refused: role-has-no-directory"]
   dirs -->|"at least one, or nothing to check"| commands{"6 — does a command redirect outside them?"}
   commands -->|"yes"| r3["refused: redirect-outside-granted-directories"]
@@ -131,11 +133,16 @@ to reason about, and guessing one for an unidentified caller is how a policy bec
 The two ways to have no role are kept apart on purpose: `no-roles-configured` is a fact about the
 deployment, `no-role` is a fact about this caller, and one of them is a configuration task.
 
-A tool that runs code is judged by its grant alone, before any directory is consulted, because what
-it runs need not sit in the domain at all — a directory rule borrowed from the domain would refuse
-the ordinary case of running a project's tests inside a project. So the grant is the whole of its
-authority, and the domain saying nothing is a refusal rather than a licence: "nobody said who may
-call this" is the worse answer to give an execution tool.
+A tool that runs code is judged by the grants for the programs it declares, before any directory is
+consulted, because what it runs need not sit in the domain at all — a directory rule borrowed from
+the domain would refuse the ordinary case of running a project's tests inside a project. The entry
+for a program is the whole of that program's authority, and the domain saying nothing about a
+program is a refusal rather than a licence: "nobody said who may run this" is the worse answer to
+give an execution tool. Which program runs is deployment configuration — one entry in a servers
+table, one command template — so an entry under the tool's own name could never carry that
+authority alone; it is read as an optional narrowing instead. A domain that grants the programs and
+writes no tool-name entry has authorised everything the tool can run, and a domain that writes one
+restricts who may call the tool further than its programs are restricted.
 
 The directories a role may write are derived from `written_by` and `file_location` on every object
 type, never listed by hand, so tightening a domain narrows the guard with no second edit. A role
@@ -151,7 +158,8 @@ Every branch fails closed, and every decision reaches the trail, allowances incl
 carries `kind: 'guard'`, kept separate from the write path's entries because a call stopped at the
 door has no declared object type and writing it as a write with empty fields would make the log
 quiet about the difference. Two refusals are the ones to know by name: `no-roles-configured` and
-`no-grant-declared`. Both mean nobody has said who may write this, and neither is a bug.
+`no-grant-declared`. Both mean nobody has said who may write this, or run the program a tool named,
+and neither is a bug.
 
 What the guard does not cover is written down where the code is, in `UNCOVERED_BY_GUARD`: a shell
 command that writes through its own logic rather than a redirection, and a process started outside
@@ -390,28 +398,34 @@ no ability.)
 What a capability must declare is what its tools touch, through the channel the ontology plugin
 publishes: a service name both sides state as a bare string, `deepworkGovernance`, because the
 whole point is that the two packages do not import each other — a capability may be mounted with no
-governance plugin at all, and the plugin may load with no capabilities. Three argument lists can be
+governance plugin at all, and the plugin may load with no capabilities. Three lists can be
 declared, and they are judged differently: `writes` names arguments holding a path the tool writes,
-`commands` names arguments holding a command line, and `executes` names arguments holding a path
-the tool runs whatever is inside. `test-runner` declares `executes: ['target']` for `run_tests`,
-and `lsp` declares `executes: ['file_path']` for `lsp`. Who may call a declared tool comes from the
-other side: the domain's top-level `tool_grants`, which sits beside `written_by` because that is
-where this deployment's policy already lives.
+`commands` names arguments holding a command line, and `executes` names the programs the tool
+starts. The program names are read out of the deployment's own configuration rather than written by
+hand — `test-runner` declares the first word of its configured command (`python`, under the
+default) for `run_tests`, and `lsp` declares the basenames of its configured servers' commands —
+because the declaration has to name what this deployment will actually start. Who may run them
+comes from the other side: the domain's top-level `tool_grants`, which sits beside `written_by`
+because that is where this deployment's policy already lives.
 
-So the authority over a capability's tools is split, and the split is visible in three refusals. A
-tool that declares itself and finds no grant entry is refused with `no-grant-declared`. A tool whose
-grant does not name the caller's role is refused with `tool-not-granted-to-role`, and the message
-names the roles that do. A domain that writes `tool_grants: { run_tests: [] }` has made a decision
-rather than an omission — nobody may call it — and the guard reads that differently from silence,
-which matters because the two would otherwise be the same absence.
+So the authority over a capability's tools is split, and the split is visible in the refusals. A
+tool that names a program with no `tool_grants` entry for it is refused with `no-grant-declared`,
+and the refusal names the program and the two ways to fix it. A program whose grant does not name
+the caller's role is refused with `tool-not-granted-to-role`, and the message names the program and
+the roles that may run it. A domain that writes `tool_grants: { pytest: [] }` has made a decision
+rather than an omission — nobody may run it — and the guard reads that differently from silence,
+which matters because the two would otherwise be the same absence. An entry under the tool's own
+name is not required: when the domain writes one, the caller's role must be in it as well, and when
+it writes none, the program entries decide alone.
 
 The honest part is what the guard knows and what it does not. A capability reaches the world through
 the language's own APIs — `node:fs`, a spawned process, the host's session-query corpus — rather
 than through a host seam that terminates them, so the host's own sandbox never sees the call. The
 guard's picture of a tool is the declaration the tool made about itself, and nothing verifies that
-declaration against what the tool does. A tool that declares nothing is not governed at all, and
-the platform cannot tell "declares nothing because it touches nothing" from "declares nothing
-because somebody forgot". `session-query` is the live example: it registers `session_trace`, which
+declaration against what the tool does — including the program names: a tool that says it runs
+`pytest` is believed, and nothing watches what it actually spawns. A tool that declares nothing is
+not governed at all, and the platform cannot tell "declares nothing because it touches nothing"
+from "declares nothing because somebody forgot". `session-query` is the live example: it registers `session_trace`, which
 is a read, and never calls `declareTool` — so the guard has never heard of it and lets it past. That
 is consistent with the tool, and it is still the shape of the gap.
 
@@ -511,6 +525,7 @@ branch. None of them is smoothed over above.
 | The guard reads redirections, not a shell's own logic: `cp`, `mv`, `sed -i` and interpreters write without one. | `UNCOVERED_BY_GUARD`, `govern/guard.ts` |
 | A process started outside the tool pipeline — a hook, a background service — is not seen at all. | `UNCOVERED_BY_GUARD`, `govern/guard.ts` |
 | A tool that declares nothing is not governed, and a declaration cannot be verified against what the tool does. | `govern/access.ts` |
+| The program names a capability declares in `executes` are its own word: a tool claiming it runs `pytest` is believed, and nothing checks what it actually spawns. | `govern/access.ts` |
 | The plugin's own tools are not judged by the mounted guard: nothing declares `ontology_write`, and it is not in the built-in table. Its authority is inside the tool. | `govern/access.ts`, `index.ts` |
 | A host with no `provide` gets no declaration channel, and then only this plugin's own tools are governed. | `index.ts`, at boot |
 | A host with no tool guard gets no guard mounted, and writes through the filesystem tool and the shell go unchecked. | `index.ts`, at boot |

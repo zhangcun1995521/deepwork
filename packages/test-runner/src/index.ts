@@ -16,7 +16,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
-import { isAbsolute, join, normalize, relative } from 'node:path'
+import { basename, isAbsolute, join, normalize, relative } from 'node:path'
 
 import { parseJunit, triage, type JunitCase, type JunitSummary } from './junit.ts'
 import { runCommand, type RunOutcome } from './run.ts'
@@ -166,6 +166,19 @@ const MANUAL_SKILL = {
 
 const DEFAULT_COMMAND = 'python -m pytest -q --junitxml=.junit.xml {target}'
 const JUNIT_FILE = '.junit.xml'
+
+/**
+ * The program a configured command starts: its first word's basename.
+ *
+ * The command is run through a shell, and the first word is what that shell execs on this tool's
+ * behalf — everything after it is that program's arguments, the `{target}` slot included. That is
+ * the thing whose authority the guard judges, so it is the thing declared. A command line that
+ * chained a second program through `&&` or a pipe would start more than this names; the
+ * declaration covers the program this tool chose to run, not the whole shell grammar.
+ */
+function programOf(command: string): string {
+  return basename(command.trim().split(/\s+/)[0] ?? '')
+}
 
 /** A target is a relative path and nothing else: no shell metacharacters, no climbing out. */
 const SAFE_TARGET = /^[A-Za-z0-9_][A-Za-z0-9_./\\-]*$/
@@ -373,18 +386,17 @@ export function apply(ctx: TestRunnerContext, config: Config = {}): void {
     },
   })
 
-  // What these tools touch, told to the plugin that judges them — and told rather than known,
+  // What this tool runs, told to the plugin that judges it — and told rather than known,
   // because that plugin has never heard of `run_tests` and should not have to.
   //
-  // `executes` and not `writes`: running a project's tests runs whatever is in the target, and the
-  // target need not sit inside the domain at all. A directory rule borrowed from the domain would
-  // refuse the ordinary case of testing a project, so a tool that runs code is authorised by the
-  // domain's grant alone — and a domain that has not granted it to anybody gets a refusal rather
-  // than a free pass.
+  // `executes` names the program the configured command starts, not an argument: the command is
+  // deployment configuration, and which program it starts is exactly what needs a grant. A grant
+  // under the tool's name alone would let a deployment change `python -m pytest` to any other
+  // program with nobody reviewing the authority. `parse_junit` runs nothing and declares nothing.
   const governance = ctx.inject
   if (governance === undefined) {
     warn(
-      'the runtime exposes no service lookup, so run_tests cannot declare what it touches and is ' +
+      'the runtime exposes no service lookup, so run_tests cannot declare what it runs and is ' +
         'not governed by the write guard',
     )
   } else {
@@ -392,7 +404,7 @@ export function apply(ctx: TestRunnerContext, config: Config = {}): void {
     // the host's own plugins use (`inner.systemPrompt.section(...)`). Reading it as the value
     // compiled, and then called a method on a context that does not have one.
     governance([GOVERNANCE_SERVICE], (scoped: Record<string, GovernanceSurface>) => {
-      scoped[GOVERNANCE_SERVICE]?.declareTool('run_tests', { executes: ['target'] })
+      scoped[GOVERNANCE_SERVICE]?.declareTool('run_tests', { executes: [programOf(command)] })
     })
   }
 
