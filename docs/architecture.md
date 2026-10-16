@@ -82,6 +82,52 @@ resolve to the products it is, and the declarations that carry policy — `writt
 `increment_by`, `tool_grants`, `situation`, `skill`. The property is pinned by a test, not asserted:
 `engine/graph.test.ts` loads an unrelated domain through the same engine unchanged.
 
+## Interfaces, not objects
+
+A declaration turns into three different kinds of thing, and telling them apart is most of what
+makes the rest of this document readable.
+
+**Objects and relations are the world.** They have instances, they have ids, a query returns them,
+and a relation is an edge between two of them.
+
+**A function and an action are not objects.** They are how the world is read and how it is changed:
+declared in the domain, implemented by the engine. Neither is a type, neither has instances, and
+nothing in the graph holds one — a query cannot return an action, and a relation cannot point at a
+function. What they have instead is a surface, and the shape of that surface is deliberate:
+
+- a declared function becomes a **mode** of one tool, `ontology_query`. The tool count is fixed and
+  the vocabulary is data, so adding a question to a domain adds no tool. A domain that declares no
+  function at all still gets the three undeclared read tools — `ontology_get`, `ontology_find`,
+  `ontology_links` — which exist precisely so that a world with no queries declared is still
+  readable.
+- a declared action becomes **a tool of its own**, alongside the generic write tool. That is why an
+  action can be named where a function cannot: `tool_grants` takes the name of a tool, and only the
+  action has one.
+- a capability's tool is a tool and nothing more. It declares what it touches, and the same guard
+  that judges a write judges it.
+
+Three consequences follow from that, and each one is a trade rather than an omission.
+
+**A trail, not a graph, records that something happened.** An action's *products* are objects and
+they are in the graph — a run, a verdict, a piece of evidence, an incident moved to a new state. The
+*occurrence* of the action is not: it is one line in the audit trail or the provenance file beside
+the domain. So "which action changed this, and as whom" is a question for the trail; there is no
+edge to walk, and a reader looking for one should stop looking.
+
+**Who may do what is configuration, not an ontology fact.** `written_by` on a type, `tool_grants` in
+the domain, and the deployment's role map are three string mappings that the code reads and the
+graph does not contain. The graph can say what happened and what state something is in; it cannot
+answer "who is allowed to approve this". Putting the policy into the world is possible — an action
+becoming an object, a grant becoming a relation — and it would make the ontology larger and every
+declaration heavier. This project has not needed it, and this paragraph is the place that trade is
+written down rather than rediscovered.
+
+**A skill is an outlet, not a place knowledge is kept.** The knowledge lives in the domain as
+ordinary objects: a runbook, a practice somebody vouched for. Two things read them out, and they are
+the same declaration read twice — the skill catalogue, which a model may reach for, and the injected
+rule block, which it must see. Which one a piece of knowledge gets is decided by how much the agent
+may miss it, and nothing is stored in the catalogue that is not an object first.
+
 ## One write, end to end
 
 A tool call meets governance in two places, and they answer different questions. The guard is the
