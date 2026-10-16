@@ -86,6 +86,42 @@ outcome, the exit status and how long the run took. It never records the credent
 output, or the address — the address can carry a token in its query string, and a log is not the
 place to find that out.
 
+## Approval
+
+A call is a question before it is a dial. When the deployment mounts an approval service — the host
+ships one — the caller is asked, on that agent's behalf, whether this route may be dialled:
+
+```
+Allow this agent to dial route "CP-DEMO-001" (local-demo) at http://127.0.0.1:4599/health.
+This session may dial that route without asking again; every other route asks separately.
+```
+
+What the answer covers is deliberately narrow, and narrower than the host's own desktop gate: there,
+one grant opens a capability for a session, because "may this agent use the desktop" is a single
+standing permission. Here the unit is the *route*, because each system is a separate authority — a
+person who approved a health check on a development box has not approved a tap on the payroll system.
+The host's own wording for the seam is that grants apply only to the requested action, and the action
+a caller requests is one route.
+
+Every ending but `allowed-once` refuses, and nothing is dialled — not even the credential is fetched,
+because a refusal that happened after the material was read is one the trail cannot tell apart from a
+call that ran. The three endings read differently on purpose: `rejected` is a decision not to repeat
+the call unchanged, `cancelled` is a question that can be asked again, and `unavailable` is an
+environment that never had anyone to ask. A service that throws is a fourth refusal, `ask-failed`. An
+agent the host does not name is never remembered, so it is asked every time.
+
+Asking is on by default and is switched off by configuration, in one spelling:
+
+```
+DEEPWORK_EXTERNAL_APPROVAL=off
+```
+
+The default is on because the two ways of being wrong are not symmetrical: a deployment that wanted to
+be asked and was not has an agent reaching systems unattended, while one that did not want to be asked
+and was has a prompt to answer. A deployment that mounts no approval service at all — `dsh headless`
+among them — refuses every call rather than dialling unwatched, which is the host's own rule for this
+seam: an asker fails closed on `unavailable`.
+
 ## What it deliberately does not do
 
 - **It does not write the ontology.** A reach is an observation, and recording it is the domain's
@@ -105,7 +141,7 @@ place to find that out.
 ## Verifying
 
 ```sh
-npm test        # 21 tests: real child processes, a real socket on 127.0.0.1, a real file
+npm test        # 29 tests: real child processes, a real socket on 127.0.0.1, a real file
 ```
 
 The scripts build `@zhangcun123/ontology` first (`npm run build --prefix ../ontology`) before testing,

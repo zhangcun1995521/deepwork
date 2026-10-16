@@ -1,6 +1,6 @@
 {
   "name": "@zhangcun123/external",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Reach an outside system by the route the deployment's own domain declares — a capability plugin for DeepWork.",
   "license": "MIT",
   "type": "module",

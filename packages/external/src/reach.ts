@@ -25,7 +25,7 @@
 import { credentialRef, isCredentialRefName, type CredentialRef, type ResolvedCredential } from '@deepseek-ai/dsh-credentials'
 
 import { recordReach } from './audit.ts'
-import { resolveRoute, type RouteShape } from './route.ts'
+import { resolveRoute, type RouteShape, type RouteTarget } from './route.ts'
 import { CREDENTIAL_ENV, runCommand, type ReachRun } from './run.ts'
 
 /**
@@ -88,6 +88,15 @@ export interface ReachRequest {
   auditLog: string
   /** The host's credential seam, when one is mounted. */
   credentials?: CredentialSurface
+  /**
+   * The approval gate, when the deployment asked for one.
+   *
+   * Handed in rather than built here, because asking is a conversation with the host and this file
+   * has no context: what it has is the resolved route, and the route is what a person is being asked
+   * about. `undefined` from the callback means the call may proceed; anything returned means it must
+   * not, and carries both the machine-readable reason and the sentence the model reads.
+   */
+  approve?: (route: RouteTarget) => Promise<{ reason: string; text: string } | undefined>
 }
 
 /**
@@ -190,6 +199,17 @@ export async function reach(request: ReachRequest): Promise<ReachResult> {
   const found = resolveRoute(request.ontologyRoot, request.routeId, request.shape)
   if (!found.ok) throw deny(found.reason, found.message)
   const route = found.route
+
+  // Asked before the credential is looked up and before anything is dialled.
+  //
+  // Both halves matter. Before the spawn, because an act nobody approved must not reach the system —
+  // the test asserts the far side saw no request rather than only that the result said no. Before the
+  // seam, because a refusal that happens after the credential was fetched is one the trail cannot
+  // tell apart from a call that ran, and the least a refusal can do is not touch the material.
+  if (request.approve !== undefined) {
+    const refused = await request.approve(route)
+    if (refused !== undefined) throw deny(refused.reason, refused.text)
+  }
 
   const credentials = request.credentials
   if (credentials === undefined) {

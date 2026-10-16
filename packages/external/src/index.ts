@@ -39,7 +39,7 @@
 import { basename, join } from 'node:path'
 
 import { reach, type CredentialSurface, type ReachResult } from './reach.ts'
-import type { RouteShape } from './route.ts'
+import type { RouteShape, RouteTarget } from './route.ts'
 
 /** Plugin name, as the runtime's loader sees it. */
 export const name = 'deepwork-external'
@@ -69,6 +69,16 @@ export interface Config {
   route?: Partial<RouteShape>
   /** Seconds before the connector is killed, tree and all. */
   timeoutSeconds?: number
+  /**
+   * Whether a call must be approved before it is dialled. Asking is the default.
+   *
+   * The default is written in code rather than left to the deployment, because the two ways of being
+   * wrong are not symmetrical: a deployment that wanted to be asked and was not has an agent reaching
+   * systems unattended, while one that did not want to be asked and was has a prompt to answer. A
+   * deployment that means to let an agent dial unwatched has to say `false`, and this file is where
+   * that shows up in review.
+   */
+  requireApproval?: boolean
   /** Where attempts are recorded. Empty defaults to `.audit.jsonl` beside the domain. */
   auditLog?: string
 }
@@ -79,13 +89,27 @@ export interface RegisteredTool {
   description: string
   parameters: unknown
   output: { schema: unknown; render: (args: unknown, value: unknown) => unknown }
-  execute: (args: never, exec: { agentId?: string }) => Promise<unknown>
+  execute: (args: never, exec: ExecutionContext) => Promise<unknown>
+}
+
+/**
+ * What a tool's `execute` is handed.
+ *
+ * Structural, like every other seam here. `agent` is the live agent on whose behalf the call runs,
+ * set by the host's agent loop — one per session, and the identity the approval gate keys on. There
+ * is deliberately no `agentId`: the host sets no such field, and a gate that keyed on one would ask
+ * again on every call while looking like it remembered.
+ */
+export interface ExecutionContext {
+  agent?: { id?: string }
+  /** The host's own cancellation signal, passed on to the approval question. */
+  signal?: unknown
 }
 
 /** The slice of the runtime context this plugin uses. Structural, and so host-free. */
 export interface ExternalContext {
   tools: { register(tool: RegisteredTool): void }
-  logger?: { warn(message: string): void }
+  logger?: { warn(message: string): void; info?(message: string): void }
   /**
    * The runtime's own service lookup.
    *
@@ -96,7 +120,7 @@ export interface ExternalContext {
    * question without the declaration, which is what an opportunistic consumer wants: this plugin is
    * useful in a composition with no seam at all and has to load in one.
    */
-  get?(name: string): unknown
+  get?<Service>(name: string): Service | undefined
   /**
    * Look up a service by name once a context carrying it exists.
    *
@@ -116,11 +140,61 @@ export interface GovernanceSurface {
   ): () => void
 }
 
+/**
+ * The vocabulary the host's approval service answers in.
+ *
+ * Copied from `@deepseek-ai/dsh-user-approval`'s types rather than imported, like every other seam
+ * here: a closed set of four, and `allowed-once` is the only one that grants anything.
+ */
+export type ApprovalOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
+
+/**
+ * The slice of the host's approval service this plugin uses.
+ *
+ * `request` answers in the vocabulary above, and the host's contract names the obligation this
+ * plugin is built around: **an asker fails closed on `unavailable`.** A connector that dialled when
+ * nobody could be asked would dial in exactly the runs nobody is watching.
+ */
+export interface ApprovalSurface {
+  /** Ask for one decision about one tool call. `agent` is opaque here — the service routes it. */
+  request(request: {
+    agent: unknown
+    toolName: string
+    reason?: string
+    signal?: unknown
+  }): Promise<ApprovalOutcome>
+}
+
+/**
+ * What a caller is told for each ending that is not the one-shot grant.
+ *
+ * Three endings are three different problems, and the model's next move differs for each, so they
+ * must not read the same: a refusal is a decision not to repeat the call unchanged, a withdrawn
+ * question can simply be asked again, and an environment with no answerer never had anyone to ask.
+ */
+const REFUSAL_DETAIL: Record<Exclude<ApprovalOutcome, 'allowed-once'>, string> = {
+  // Deliberately not "the user said no": the host answers `rejected` both for a person who declined
+  // and for a session whose policy never prompts at all, and a message claiming the first would have
+  // the model tell a user they refused something they were never shown.
+  rejected:
+    'The call was refused, so nothing was dialled. Do not repeat it unchanged — say which route you ' +
+    'were about to dial and why, and ask the user how they want to proceed.',
+  cancelled:
+    'The question was withdrawn before it was answered, so nothing was dialled. Ask again if the ' +
+    'route still needs reaching.',
+  unavailable:
+    'Nobody could be asked: this environment has no answerer for an approval question. That is a ' +
+    'refusal and not a permission, so the route was not dialled.',
+}
+
 /** The name both packages state rather than import. */
 const GOVERNANCE_SERVICE = 'deepworkGovernance'
 
 /** The tool's name, which is also the name a domain may narrow in its `tool_grants`. */
 const TOOL_NAME = 'reach_system'
+
+/** The approval service's name in the runtime's registry, stated rather than imported. */
+const APPROVAL_SERVICE = 'approval'
 
 /**
  * The program a configured command starts: its first word's basename.
@@ -153,7 +227,7 @@ function programOf(command: string): string {
  * @returns The seam, or `undefined` in a composition that mounts none.
  */
 function seamOf(ctx: ExternalContext): CredentialSurface | undefined {
-  return ctx.get?.('credentials') as CredentialSurface | undefined
+  return ctx.get?.<CredentialSurface>('credentials')
 }
 
 /**
@@ -219,6 +293,7 @@ export function apply(ctx: ExternalContext, config: Config = {}): void {
     auth_ref: config.route?.auth_ref ?? '',
   }
   const timeoutSeconds = config.timeoutSeconds ?? 30
+  const requireApproval = config.requireApproval ?? true
   const auditLog =
     config.auditLog === undefined || config.auditLog.length === 0
       ? join(ontologyRoot, '.audit.jsonl')
@@ -267,6 +342,98 @@ export function apply(ctx: ExternalContext, config: Config = {}): void {
 
   const program = programOf(command)
 
+  /**
+   * What one agent already holds an open grant for, keyed by who and which route.
+   *
+   * Keyed by both, which is the one place this gate differs from the host's desktop gate: there, the
+   * unit of approval is the capability — four acts by one agent are one question, because "may this
+   * agent use the desktop" is a single standing permission. Here the unit is the *route*: each system
+   * is a separate authority, and a person who approved a health check on a development box has not
+   * approved a tap on the payroll system. The host's own words for the approval seam are "grants
+   * apply only to the requested action", and the action a caller requests is one route.
+   *
+   * The key is the agent's *id* when the host gave one and the agent object otherwise, never the
+   * object alone while an id exists: the host hands over a live agent whose identity is its session,
+   * and a gate keyed on object identity would ask again on every call while looking like it
+   * remembered.
+   */
+  const open = new Set<string>()
+  const keyOf = (exec: ExecutionContext): string | undefined => {
+    const who = exec.agent
+    if (who === undefined) return undefined
+    const id = (who as { id?: unknown }).id
+    return typeof id === 'string' && id.length > 0 ? id : String(who)
+  }
+
+  /**
+   * Ask before dialling, and hand back what the caller reads when the call must not happen.
+   * `undefined` means it may go ahead.
+   *
+   * The service is looked up here, per call, rather than during `apply`: a plugin that resolved it at
+   * mount time would hold a service that was not there yet, and a deployment may mount one later.
+   * Every ending that is not the one-shot grant refuses — including a service that threw — and the
+   * refusal is text rather than an exception, because the model has to read it and tell the user.
+   *
+   * An unnamed agent is never remembered: a call that arrives with no agent at all cannot be
+   * attributed to anyone, so it asks every time rather than opening a grant nobody owns.
+   */
+  const approveRoute = async (
+    route: RouteTarget,
+    exec: ExecutionContext,
+  ): Promise<{ reason: string; text: string } | undefined> => {
+    if (!requireApproval) return undefined
+    const who = keyOf(exec)
+    const key = who === undefined ? undefined : `${who}\u0000${route.id}`
+    if (key !== undefined && open.has(key)) return undefined
+
+    const approval = ctx.get?.<ApprovalSurface>(APPROVAL_SERVICE)
+    if (approval === undefined) {
+      return {
+        reason: 'no-approval-service',
+        text:
+          `Refused (no-approval-service): this runtime has nothing mounted that can ask, and a route ` +
+          `nobody can approve is not one this connector dials. Route "${route.id}" was not reached.`,
+      }
+    }
+
+    // The question the person answers, and the only place the scope is stated. It names the route,
+    // the system behind it when the domain declares one, and the address about to be dialled, so the
+    // answer is a decision about something rather than about a tool name.
+    const reaches = route.system === undefined ? '' : ` (${route.system})`
+    let outcome: ApprovalOutcome
+    try {
+      outcome = await approval.request({
+        agent: exec.agent,
+        toolName: TOOL_NAME,
+        reason:
+          `Allow this agent to dial route "${route.id}"${reaches} at ${route.url}. This session may ` +
+          `dial that route without asking again; every other route asks separately.`,
+        signal: exec.signal,
+      })
+    } catch (error) {
+      // Throwing is not the same as refusing: the host throws when the question has nowhere to go,
+      // which is a reason not to dial rather than a fault in the dialling.
+      return {
+        reason: 'ask-failed',
+        text:
+          `Refused (ask-failed): the approval question could not be asked — ` +
+          `${error instanceof Error ? error.message : String(error)}. Route "${route.id}" was not reached.`,
+      }
+    }
+
+    if (outcome === 'allowed-once') {
+      if (key !== undefined) open.add(key)
+      // Where an operator can find it; the question and its answer are appended to the session by the
+      // host, so "when was this opened, and for what" is answered by the record.
+      ctx.logger?.info?.(`external: route "${route.id}" approved for this session`)
+      return undefined
+    }
+    return {
+      reason: outcome,
+      text: `Refused (${outcome}): ${REFUSAL_DETAIL[outcome]} Route "${route.id}" was not reached.`,
+    }
+  }
+
   ctx.tools.register({
     name: TOOL_NAME,
     description:
@@ -297,7 +464,7 @@ export function apply(ctx: ExternalContext, config: Config = {}): void {
         { type: 'text', text: describe(value as ReachResult) },
       ],
     },
-    async execute(args: { route_id?: string }): Promise<unknown> {
+    async execute(args: { route_id?: string }, exec: ExecutionContext): Promise<unknown> {
       const routeId = args.route_id ?? ''
       if (routeId.length === 0) {
         throw new Error(
@@ -313,6 +480,7 @@ export function apply(ctx: ExternalContext, config: Config = {}): void {
         timeoutSeconds,
         auditLog,
         ...(seamOf(ctx) === undefined ? {} : { credentials: seamOf(ctx) as CredentialSurface }),
+        ...(requireApproval ? { approve: (route) => approveRoute(route, exec) } : {}),
       })
     },
   })

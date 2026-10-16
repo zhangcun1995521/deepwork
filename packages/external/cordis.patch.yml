@@ -42,6 +42,14 @@
         # never answers must not take the agent's turn with it, and 30 seconds is the point at which
         # an interactive call has already failed from the caller's side.
         timeoutSeconds: !!js 'process.env.DEEPWORK_EXTERNAL_TIMEOUT ? Number(process.env.DEEPWORK_EXTERNAL_TIMEOUT) : 30'
+        # Whether a call is a question before it is a dial. On unless the deployment spells out that
+        # it is off, because the two ways of being misconfigured are not symmetrical: one leaves an
+        # agent reaching systems with nobody watching, the other leaves a prompt to answer.
+        #
+        # The value is inverted rather than read as a boolean so that a typo, an empty variable and
+        # an unset one all mean the same thing — asking. `DEEPWORK_EXTERNAL_APPROVAL=off` is the only
+        # spelling that turns it off, and it is the one a reader can find with a grep.
+        requireApproval: !!js 'process.env.DEEPWORK_EXTERNAL_APPROVAL !== "off"'
         # One line per call, refusals included. Defaults to `.audit.jsonl` beside the domain, where
         # the ontology plugin's own write trail lands, so the two are read together.
         auditLog: !!js 'process.env.DEEPWORK_EXTERNAL_AUDIT_LOG ?? ""'
