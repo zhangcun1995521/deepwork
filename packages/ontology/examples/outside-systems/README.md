@@ -25,7 +25,8 @@ in this project is written down.
 | `OutsideSystem` as an ordinary type | the same four read tools every type gets, in the same `type` enum, with no state to filter and no branch anywhere that knows it is "external" |
 | `interface_ref` | a pointer to where the interface is written down, not a copy of it — a second copy is a second interface |
 | `auth_how`, `via_proxy`, `network_segment`, `pitfalls` | what only the last person to hit the problem knows, kept where the next caller can read it |
-| `lifecycle` + `default_state` on `AccessRoute` | reads return confirmed routes and say how many candidates they left out |
+| `lifecycle` + `default_state` on `AccessRoute` | reads return confirmed routes and say how many candidates they left out — and a connector refuses to dial one, for the same reason |
+| `url`, `auth_ref` | where the call goes and which name the secret is filed under, so a route is dialable without the domain ever holding the material |
 | `requires_review` on `confirm` | confirming a route needs a `RouteCheck` saying `reachable`, produced by somebody other than the person making the move |
 | `routes_reaching` + its `where` | "which routes reach this system", which a traversal does not get the read's state filter for free |
 | `tool_grants` | which role may run the program a reaching tool starts, and call the tool by name — the one example here that declares either |
@@ -117,12 +118,13 @@ cannot walk it. Three grants, three answers.
 ## What this domain does not do
 
 - **It does not reach anything.** No file here opens a socket, holds a credential, or reads a
-  response. `auth_how` names the mechanism and the seam the material is filed under; the material
-  itself is in the host's credential seam. Reaching the system is a tool's work — the host's
-  shell, an MCP server, a connector somebody else wrote.
-- **The tool the grant names is not in this repository.** `reach_system` is what a connector would
-  declare through the governance channel; the domain only states who may call it. That is the
-  useful half to have in the domain, because it is the half the deployment owns — and the guard
+  response. `auth_how` names the mechanism and the seam the material is filed under; `auth_ref` names
+  the entry in that seam, and the material itself is only ever there. Reaching the system is a tool's
+  work, and the tool is [`@zhangcun123/external`](../../external): this directory states which route
+  exists and who may go through it, the connector does the dialling.
+- **The tool the grant names is not in this domain.** `reach_system` is declared by
+  `@zhangcun123/external` through the governance channel; the domain only states who may call it. That
+  is the useful half to have in the domain, because it is the half the deployment owns — and the guard
   enforces it the moment a tool by that name declares itself, which is what the test does.
 - **Nothing cross-checks a route's `environment` against the system's `reachable_from`.** Two
   declarations, no rule comparing them. Adding one would mean the engine knowing that a system and
@@ -140,6 +142,9 @@ object_types:
 
   AccessRoute:
     written_by: [engineer]                   # who wired it, and who hit its pitfalls
+    fields:
+      url: { type: string }                  # where the call goes
+      auth_ref: { type: string }             # the name the secret is filed under, never the secret
     lifecycle:
       default_state: confirmed               # what a read returns, and what a walk does not
       transitions:

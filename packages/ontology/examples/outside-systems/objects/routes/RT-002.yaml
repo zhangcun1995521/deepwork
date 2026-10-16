@@ -2,9 +2,11 @@ route_id: RT-002
 system: SYS-LANTERN
 environment: staging
 status: confirmed
+url: https://lantern.staging.example.com/api/v1/visits
 auth_how: >-
   The same service account as production, filed under a second name; the secret is still in the
   host's credential seam.
+auth_ref: LANTERN_STAGING_TOKEN
 via_proxy: true
 network_segment: operations
 pitfalls:

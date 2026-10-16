@@ -1,0 +1,7 @@
+route_id: R-4
+system: SYS-LANTERN
+status: confirmed
+url: http://127.0.0.1:0/placeholder
+# A blank reference. The credential seam cannot address it, so there is no reference to miss and the
+# connector has to refuse it as a name rather than look it up and report it as missing.
+auth_ref: ""

@@ -1,0 +1,73 @@
+version: "1.0"
+
+# A scratch domain for this package's tests: small enough to read in one sitting, and shaped like the
+# real ones. One type that gets reached, one type that describes how to reach it, a lifecycle so the
+# suite can pin the rule that a route nobody has walked is not dialable, and a grant for the program
+# the test's command starts.
+#
+# It is deliberately not a copy of `examples/outside-systems`. That domain is the one a reader is
+# pointed at and its test already pins what it demonstrates; this one exists so the connector's own
+# suite can say "refused" about a route it wrote itself, without editing an example to do it.
+#
+# Everything here is synthetic.
+
+object_types:
+  # What a route gets to. One field, because the connector never reads it: the object is here so a
+  # route has something to point at and so the result of a call can name the system it reached.
+  OutsideSystem:
+    primary_key: system_id
+    required_fields: [system_id, name]
+    file_location: objects/systems/SYS-*.yaml
+    fields:
+      system_id: { type: string, required: true }
+      name: { type: string, required: true }
+
+  # How this deployment reaches one. `url` and `auth_ref` are not in `required_fields` on purpose:
+  # one of the fixtures is a confirmed route with a blank address, which is the state the connector
+  # has to refuse by naming the field — a domain that could not hold that state could not be tested
+  # against it.
+  AccessRoute:
+    primary_key: route_id
+    required_fields: [route_id, system, status]
+    file_location: objects/routes/R-*.yaml
+    written_by: [engineer]
+    lifecycle:
+      field: status
+      initial: candidate
+      # The same declaration the example domain makes: a read returns confirmed routes only, and the
+      # connector inherits that boundary rather than duplicating it.
+      default_state: confirmed
+      states: [candidate, confirmed]
+      transitions:
+        confirm:
+          from: [candidate]
+          to: confirmed
+          by: [curator]
+    fields:
+      route_id: { type: string, required: true }
+      system: { type: ref, to: OutsideSystem, required: true }
+      status: { type: enum, values: [candidate, confirmed], required: true }
+      # The address this route dials. Rewritten by the suite, since the test's server listens on a
+      # port the operating system picks; see `tests/fixtures/domain` in the test file.
+      url: { type: string }
+      # The name the credential is filed under. Never the material, which lives in the host's
+      # credential seam.
+      auth_ref: { type: string }
+
+link_types:
+  reaches:
+    from: AccessRoute
+    to: OutsideSystem
+    via: system
+    description: The outside system this route gets to.
+
+tool_grants:
+  # The program the test's command starts. `node` rather than a connector binary, because the suite
+  # runs a real process and Node is the one interpreter guaranteed to be there on both the Windows
+  # machine this was written on and the ubuntu runner it has to pass on.
+  #
+  # `reach_system` is the tool's own name and narrows it. Both entries are what the guard needs: the
+  # program entry is required for a code-running tool, and the mention of the tool is what the real
+  # domain's grant also does.
+  node: [engineer]
+  reach_system: [engineer]

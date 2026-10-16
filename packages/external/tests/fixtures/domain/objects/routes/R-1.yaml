@@ -1,0 +1,7 @@
+route_id: R-1
+system: SYS-LANTERN
+status: confirmed
+# A placeholder the suite replaces with the address of the server it just started. The port is
+# whatever the operating system hands out, so a fixed value here would be a test that dials nothing.
+url: http://127.0.0.1:0/placeholder
+auth_ref: FIXTURE_REACH_CREDENTIAL

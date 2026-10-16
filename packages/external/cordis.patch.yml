@@ -1,0 +1,47 @@
+# The composition layer this bundle contributes.
+#
+# Declaring `dsh.bundle.patch` is what turns this package from an inert dependency into a profile
+# layer, the same way the ontology, test-runner, lsp and computer plugins do it. The row names the
+# package by its bare name so the profile's own node_modules resolves it.
+
+- insert:
+    - id: deepwork-external
+      name: '@zhangcun123/external'
+      config:
+        # Every `!!js` expression is a single-quoted scalar on one line, and that is not cosmetic.
+        # YAML reads a bare scalar containing ` : ` as a mapping, and a folded one arrives as an
+        # unresolved string; either shape reaches the plugin as something that is not the setting,
+        # and the row fails to load with nothing said. The test-runner row records the run that
+        # found this.
+        #
+        # The domain, which is where a route comes from. This must be the same root the ontology
+        # plugin was pointed at: a connector reading a different domain than the agent does would
+        # dial routes nobody declared. Empty means there is no domain to read a route out of, so no
+        # tool is registered and the plugin says so.
+        ontologyRoot: !!js 'process.env.DEEPWORK_ONTOLOGY_ROOT ?? ""'
+        # The program a connector starts, with `{url}` where the address goes:
+        #
+        #   node /opt/connectors/reach.mjs {url}
+        #
+        # Deployment configuration, never a model argument — a tool that runs what it is handed is a
+        # remote shell with a tool's name. Empty means this deployment has not said how it reaches
+        # anything, so the tool is not registered at all: an unconfigured deployment must read as
+        # unconfigured rather than as one whose every call fails. The first word is the program the
+        # governance channel is told about, and it is the name the domain's `tool_grants` has to grant.
+        command: !!js 'process.env.DEEPWORK_EXTERNAL_COMMAND ?? ""'
+        # Which of the domain's own names mean what. The object type a route is, the field holding
+        # the address, and the field holding the *name* of the credential — never the credential.
+        # Three names rather than three defaults, because a domain that called its route type
+        # `Endpoint` and its secret field `token_ref` is a working domain: nothing in the connector's
+        # code knows the customer's vocabulary, and nothing here guesses it either.
+        route:
+          type: !!js 'process.env.DEEPWORK_EXTERNAL_ROUTE_TYPE ?? ""'
+          url: !!js 'process.env.DEEPWORK_EXTERNAL_ROUTE_URL_FIELD ?? ""'
+          auth_ref: !!js 'process.env.DEEPWORK_EXTERNAL_ROUTE_AUTH_FIELD ?? ""'
+        # Seconds before the program is killed, tree and all. A connector dialling a gateway that
+        # never answers must not take the agent's turn with it, and 30 seconds is the point at which
+        # an interactive call has already failed from the caller's side.
+        timeoutSeconds: !!js 'process.env.DEEPWORK_EXTERNAL_TIMEOUT ? Number(process.env.DEEPWORK_EXTERNAL_TIMEOUT) : 30'
+        # One line per call, refusals included. Defaults to `.audit.jsonl` beside the domain, where
+        # the ontology plugin's own write trail lands, so the two are read together.
+        auditLog: !!js 'process.env.DEEPWORK_EXTERNAL_AUDIT_LOG ?? ""'

@@ -2,9 +2,11 @@ route_id: RT-003
 system: SYS-FERRY
 environment: production
 status: candidate
+url: https://ferry-gateway.partner.example.com/v2/push
 auth_how: >-
   A mutual-TLS client certificate issued per partner. The certificate and its key stay in the
   host's credential seam; this domain records only which seam.
+auth_ref: FERRY_PARTNER_CERTIFICATE
 via_proxy: true
 network_segment: partner-transit
 pitfalls:

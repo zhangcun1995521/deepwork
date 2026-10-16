@@ -1,0 +1,8 @@
+route_id: R-5
+system: SYS-LANTERN
+# No `status` at all. A read of this domain falls back to the type's `initial` state rather than
+# treating the object as stateless, so this route is a candidate and is refused for that reason —
+# which is what the suite pins here: a connector that compared the field to `confirmed` directly
+# would agree about this route by accident, and disagree the day `initial` was also the default.
+url: http://127.0.0.1:0/placeholder
+auth_ref: FIXTURE_REACH_CREDENTIAL

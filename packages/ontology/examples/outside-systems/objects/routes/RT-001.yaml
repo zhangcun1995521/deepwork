@@ -2,9 +2,11 @@ route_id: RT-001
 system: SYS-LANTERN
 environment: production
 status: confirmed
+url: https://lantern.operations.example.com/api/v1/visits
 auth_how: >-
   A service account; the secret stays in the host's credential seam and this domain records only
   the name it is filed under.
+auth_ref: LANTERN_OPERATIONS_TOKEN
 via_proxy: false
 network_segment: operations
 pitfalls:

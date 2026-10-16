@@ -297,9 +297,10 @@ does. Each of these was considered and declined, not overlooked.
   credential seam and never enters the domain, the audit trail, or anything a model reads.
 - **Not an integration runtime.** A domain declares the systems outside it — what each one is for,
   who depends on it, how this deployment reaches it, which pitfalls that path is known for — and
-  which tool may touch one. Making the call is a tool's work: the host's shell, an MCP server, a
-  connector somebody else wrote. Nothing here opens a connection or reads a response, and a route
-  is declared the way a secret is: the domain keeps the pointer and the policy, never the value.
+  which tool may touch one. Making the call is a capability's work, and the capability is deliberately
+  thin: `packages/external` runs **a program the deployment configured** and reports what it did.
+  There is no client library per vendor and no protocol implemented here, so the repository still
+  holds no knowledge of anybody's API — it holds the mechanism, the grant and the trail.
 - **Not the working record.** The decision log, the verified facts and the environment pitfalls
   are kept locally and are not published. It is written as notes, in the language of the work,
   which means it keeps collecting names and paths that do not belong in public — sanitising it
@@ -313,7 +314,7 @@ And the honest half — what a reader will find missing:
 | One artefact showing a task start to finish — a recording, not a description | sessions are recorded as documents and refusals as audit entries, but there is no single thing a stranger can watch |
 | `deepwork init` — a domain to copy and rename | the six examples are the starter material |
 | Validation on several real domains | one production domain has been through it — 17 object types, 269 instances, 214 relations — and that run is what put the two-level diagnostics in. One is not several |
-| A connector to an outside system | `examples/outside-systems` declares the systems, the routes and who may call a tool that reaches one; nothing in this repository makes the call, which is the boundary above rather than a gap |
+| A connector for any particular system | the mechanism is in `packages/external` — one tool that runs a program the deployment configures — so what is missing is not the call but the other half of a connector: no client per vendor, no protocol per product, and no vendor is named anywhere in this repository |
 
 ## Quick start
 
@@ -416,10 +417,11 @@ domain was put through. `packages/ontology/tests/fixtures/ahead-of-its-data` now
 | `packages/ontology/examples/outside-systems` | the enterprise outside the deployment: the systems it must talk to, the routes that reach them with the pitfalls on each, and who may call a tool that reaches one — the one example that exercises `tool_grants` |
 | `packages/ontology/examples/infrastructure` | the machines and services and what is wired to what: four node kinds as ordinary object types, four relations that state which way a failure travels along them, and the honest limit that impact is written down rather than computed |
 | `packages/test-runner` | a capability: run a project's tests and read what the run said (see its README) |
+| `packages/external` | a capability: reach a system the domain declares, by running the program the deployment configured, with the credential out of the host's seam and every attempt in the trail (see its README) |
 | `packages/session-query` | a capability the host does not ship yet: the lineage around one session, so an agent can pick up what another started |
 | `packages/lsp` | the same kind of stand-in: ask a language server where something is defined, instead of guessing from a text match |
 | `packages/computer` | a capability: look at this machine's windows and elements and act on them — with the window scope a deployment names, a guard grant per program and per verb, and one approval per session rather than one per click |
-| `packages/role` | not a capability: the role a mode acts as and the prompt file it works under, registering nothing and publishing the role for the ontology to select rules by |
+| `packages/role` | not a capability: the role a mode acts as and the prompt file it works under, registering nothing and stating the role to nobody but its own agents — which role a deployment acts as is the `situation` tag the ontology selects rules by |
 | `packages/probe` | the smallest possible plugin, kept as the smoke test for the plugin route |
 | `tools/fde` | the FDE toolkit: qualify a use case before anything gets built (Python, runs standalone) |
 | `docs` | two recorded agent sessions, the architecture route written out in English and Chinese, and the derivation picture |

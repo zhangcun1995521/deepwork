@@ -1,0 +1,8 @@
+route_id: R-3
+system: SYS-LANTERN
+status: confirmed
+# Confirmed, and with nothing to dial. This is the state that makes the connector's refusal name the
+# field the deployment configured, rather than resolving a credential and running a program with an
+# empty address in its argument list.
+url: ""
+auth_ref: FIXTURE_REACH_CREDENTIAL
