@@ -15,9 +15,12 @@
     "cordis.patch.yml"
   ],
   "scripts": {
+    "built:domain": "npm run build --prefix ../ontology",
+    "pretest": "npm run built:domain",
     "test": "node --test",
+    "prebuild": "npm run built:domain",
     "build": "tsc -p tsconfig.json",
-    "prepack": "tsc -p tsconfig.json"
+    "prepack": "npm run built:domain && tsc -p tsconfig.json"
   },
   "dsh": {
     "bundle": {

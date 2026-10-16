@@ -108,6 +108,12 @@ place to find that out.
 npm test        # 21 tests: real child processes, a real socket on 127.0.0.1, a real file
 ```
 
+The scripts build `@zhangcun123/ontology` first (`npm run build --prefix ../ontology`) before testing,
+building or packing. This package consumes that package's **built** subpath exports — `loadGraph` and
+the audit writer — and `packages/*/lib/` is in `.gitignore`, so a fresh checkout has no `lib/` at all.
+CI runs each package's `npm test` on exactly such a checkout, which is how this was found: the suite
+passed on a machine where the sibling had been built once and failed on one where it had not.
+
 The suite stands up an HTTP server, copies the fixture domain per test so a route can hold the port
 it landed on, and runs a stand-in connector — `node tests/fixtures/reach.mjs {url}` — whose output
 and exit status are the only things the connector is allowed to read. It covers a route that answers,
