@@ -88,9 +88,15 @@ link_types:
     to: Project
     via: project            # the field carrying the edge; defaults to the relation's name
 
+  depends_on:
+    from: Service
+    to: Service
+    propagation: to_from    # which way a *failure* travels: from_to | to_from | both
+    semantics_tag: hard_dep     # what the relation means: one of seven tags, not prose
+
 functions:
   at_risk_projects:
-    use: filter_by          # filter_by | traverse | search
+    use: filter_by          # filter_by | traverse | search | walk
     on: Project
     where: { status: [AtRisk, Delayed] }   # a list reads as "either of these"
 
@@ -98,9 +104,17 @@ functions:
     use: filter_by
     on: Project
     by: customer            # the field that becomes an argument, typed from its declaration
+
+  blast_radius:
+    use: walk               # walk outward from one id, hop by hop, over declared failures
+    by: service_id          # the argument holding the id to start from
+    direction: downstream   # downstream | upstream | both; default downstream
+    depth: 2                # hops; default 2, hard cap 5
+    semantics_tag: [hard_dep, runtime_dep]   # optional narrowing, by tag
+    relations: [depends_on]              # optional narrowing, by relation name
 ```
 
-Five things worth knowing:
+Eight things worth knowing:
 
 - **A relation is a field.** An edge exists when an instance carries the field its
   relation names, *and* the instance's type is that relation's declared `from`. Both
@@ -113,10 +127,28 @@ Five things worth knowing:
 - **`direction: incoming` walks a relation backwards.** `reported_on` runs Issue →
   Project, but "what is blocking this project" starts at the project. An inverse relation
   cannot be derived from the data, so it is asked for at query time.
+- **`propagation` is what makes a relation walkable.** A walk follows failures, not arrows,
+  and which way a failure travels along a relation is a fact the data cannot supply: "X
+  depends_on Y" is drawn X → Y, and it is Y failing that reaches X, so it is declared
+  `to_from`. `from_to` and `both` are the other two answers. A relation that declares no
+  direction is not walked at all — and one that declares a direction nothing understands is
+  a warning, never a guess. Absent is an ordinary answer, not a defect.
+- **`semantics_tag` is a vocabulary, not prose.** Seven tags — `hard_dep`, `runtime_dep`,
+  `traffic`, `aggregation`, `redundancy`, `observation`, `annotation` — which a walk reports
+  per hop and can be narrowed by. A sentence written in that key is a warning: it reads as a
+  declaration and takes effect as nothing.
+- **`walk` answers what `traverse` cannot: a path.** One declared function walks outward from
+  an id over relations that declare a failure direction, breadth-first, and returns every
+  entity reached with its hop count, the relation that reached it and that relation's tag.
+  The default direction is `downstream` — what breaks *because* this failed — the default
+  depth is 2 hops, and the cap is 5, which a declaration cannot raise. `semantics_tag` and
+  `relations` narrow which relations are followed; a narrowing that selects nothing walkable
+  warns at load rather than quietly widening to everything.
 - **Nothing is asserted by declaring.** A relation no instance carries produces no
   edges, and the loader says which ones those are rather than leaving it to be discovered.
 
-See [`examples/project-delivery`](examples/project-delivery) for a complete pack.
+See [`examples/project-delivery`](examples/project-delivery) for a complete pack, and
+[`examples/infrastructure`](examples/infrastructure) for a domain that walks one.
 
 ## Governance
 
@@ -163,8 +195,10 @@ invites the model to read a partial answer as the whole one.
 
 - **Reads reflect the loaded graph.** A write refreshes it in place, but a domain edited
   by another process is only picked up on the next load or write.
-- **Traversal is single-hop.** `ontology_links` and `traverse` follow one relation. Multi-hop
-  questions are currently several calls.
+- **Traversal is single-hop; `walk` is bounded.** `ontology_links` and `traverse` follow one
+  relation. `walk` follows declared failure directions outward — two hops by default, five at
+  most, and only over relations that declare `propagation`. Anything further, or a relation
+  nobody declared a direction for, is more calls and more declarations.
 - **Writes are not transactional.** A write rewrites its instance file; there is no
   rollback and no concurrent-write protection.
 - **Role resolution is prefix-based.** It matches an agent id against the configured map,

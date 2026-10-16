@@ -1,0 +1,4 @@
+service_id: SVC-7
+name: service-7
+dependencies: []
+cluster: CL-1

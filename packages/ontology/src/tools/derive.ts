@@ -22,10 +22,26 @@
  * the model sees a small, tight surface instead of forty near-identical tools whose
  * descriptions crowd out the task.
  *
+ * Inside the dispatcher a declared function binds to one of four primitives: a filter, a
+ * single-hop traversal, a substring search, or a *walk*. The walk is the one that answers a
+ * question the other three cannot — "this service is failing, what else does that reach" — and
+ * it is the only one that needs something the schema previously had no way to say. A walk
+ * follows failures, not arrows, and which way a failure travels along a relation is a fact about
+ * the relation: it is *declared* (`propagation`, see `LinkTypeDecl`) and never inferred from the
+ * relation's name or its tag. A relation that has not declared it is not walked at all, because
+ * a walk that guessed would report an invented direction as a stated one.
+ *
  * @module @zhangcun123/ontology/tools/derive
  */
 
-import type { FieldDecl, ObjectTypeDecl } from '../engine/schema.ts'
+import {
+  SEMANTICS_TAGS,
+  type FieldDecl,
+  type LinkTypeDecl,
+  type ObjectTypeDecl,
+  type Propagation,
+  type SemanticsTag,
+} from '../engine/schema.ts'
 import type { OntologyGraph, OntologyObject, OntologyLink } from '../engine/graph.ts'
 
 /** One tool argument, as JSON Schema. */
@@ -52,6 +68,22 @@ export interface ResultObject {
   type: string
   id: string
   data: Record<string, unknown>
+  /**
+   * How many hops from the start this entity was reached at, 1-based. Present only on a walk.
+   *
+   * Reported per entity because a blast radius is a *shape*, not a set: "the database and the
+   * two services that talk to it" and "those two services' own callers" are the same kind of
+   * answer at different distances, and a caller that cannot see the distance cannot tell which
+   * one it got.
+   */
+  hop?: number
+  /** The relation instance that reached this entity, present only on a walk. */
+  via?: string
+  /**
+   * `via`'s declared semantics_tag, when that relation declares one. Absent means the relation
+   * makes no claim, which is ordinary — not that the claim failed to reach the caller.
+   */
+  semantics_tag?: SemanticsTag
 }
 
 /** One relation instance as returned to the model. */
@@ -137,8 +169,59 @@ const DEFAULT_MAX_RESULTS = 50
 const DEFAULT_MAX_RENDERED_VALUE = 120
 
 /** The primitives a declared function may bind to. */
-const PRIMITIVES = ['filter_by', 'traverse', 'search'] as const
+const PRIMITIVES = ['filter_by', 'traverse', 'search', 'walk'] as const
 type Primitive = (typeof PRIMITIVES)[number]
+
+/**
+ * How many hops a walk takes when the declaration does not say. Two, because the second hop is
+ * where a blast radius stops being "the things wired to this one" and starts being the shape of
+ * the outage — and because every extra hop grows the answer faster than it grows the
+ * understanding of it.
+ */
+const WALK_DEFAULT_DEPTH = 2
+
+/**
+ * The most hops a walk may take, whatever the declaration asks for.
+ *
+ * A cap rather than a refusal, so a declaration asking for more still produces the deepest walk
+ * the engine will run — but *clamped out loud*: the caller is told the depth was reduced, because
+ * a truncated walk that looks complete is how "nothing else is affected" gets said about a graph
+ * nobody finished traversing.
+ */
+const WALK_MAX_DEPTH = 5
+
+/** Which way a walk moves relative to the direction failures travel. */
+const WALK_DIRECTIONS = ['downstream', 'upstream', 'both'] as const
+type WalkDirection = (typeof WALK_DIRECTIONS)[number]
+
+/**
+ * The default direction: what breaks because this entity failed.
+ *
+ * The half of the pair an incident actually asks about, and the one that can be read without
+ * knowing what the caller meant. The prior art these defaults follow — a bounded `expand_topology`
+ * BFS, default 2 hops, cap 5 — walks both directions unless told otherwise; here the other
+ * direction has to be asked for, because a result that silently contains both is a blast radius
+ * nobody can read.
+ */
+const WALK_DEFAULT_DIRECTION: WalkDirection = 'downstream'
+
+/**
+ * A declaration's walk, parsed and checked: what it narrowed to, and how far it may go.
+ *
+ * Resolved at derivation rather than at call time because everything in here is a fact about the
+ * declarations, and a declaration that cannot take effect has to be reported where a domain
+ * author will read it — at load, beside the tool it failed to produce.
+ */
+interface WalkSpec {
+  /** Which way to move: with failures, against them, or both. */
+  direction: WalkDirection
+  /** Hops to take, already clamped to the cap. */
+  depth: number
+  /** Relation names the walk is restricted to; empty means every walkable relation. */
+  relations: readonly string[]
+  /** Semantics tags the walk is restricted to; empty means every walkable relation. */
+  semantics_tag: readonly SemanticsTag[]
+}
 
 /** True for a plain mapping. */
 function isMapping(value: unknown): value is Record<string, unknown> {
@@ -229,6 +312,11 @@ function renderValue(value: unknown, limit: number): string {
  *
  * Relations are listed separately because an entity's related ids are often the
  * answer, and burying them in the field list makes them easy to miss.
+ *
+ * A walk's per-entity line leads with how far away the entity was and what reached it. The
+ * canonical value carries those three fields either way; leaving them out of the prose would
+ * mean the model is handed a blast radius it cannot tell apart from a flat list — which is the
+ * one thing the hop count exists to prevent.
  */
 export function renderResult(
   value: QueryResult,
@@ -241,7 +329,15 @@ export function renderResult(
     const fields = Object.entries(object.data)
       .filter(([name, fieldValue]) => name !== primaryKey && typeof fieldValue !== 'object')
       .map(([name, fieldValue]) => `${name}=${renderValue(fieldValue, limit)}`)
-    lines.push(`${object.type} ${object.id}${fields.length > 0 ? `  ${fields.join('  ')}` : ''}`)
+    // Only a walk sets `hop`; every other tool's lines stay exactly as they were.
+    const reached =
+      object.hop === undefined
+        ? ''
+        : `  hop ${object.hop}${object.via === undefined ? '' : ` via ${object.via}`}` +
+          `${object.semantics_tag === undefined ? '' : ` (${object.semantics_tag})`}`
+    lines.push(
+      `${object.type} ${object.id}${reached}${fields.length > 0 ? `  ${fields.join('  ')}` : ''}`,
+    )
   }
   if (value.links.length > 0) {
     lines.push(
@@ -263,13 +359,33 @@ export function renderResult(
   return lines.join('\n')
 }
 
-/** JSON Schema for one entity. */
+/**
+ * JSON Schema for one entity.
+ *
+ * `hop`, `via` and `semantics_tag` are declared here even though only a walk produces them: the
+ * runtime validates a tool's value against this schema *before* the model sees it, so a field
+ * the walk adds and this does not admit would turn a finished walk into a failed call — the
+ * work done and thrown away at the last step. They are optional, so the other tools' results
+ * still validate without them.
+ */
 const OBJECT_SCHEMA: JsonSchemaNode = {
   type: 'object',
   properties: {
     type: { type: 'string', description: 'Declared object type name.' },
     id: { type: 'string', description: 'Identity within that type.' },
     data: { type: 'object', description: 'The instance fields as stored.' },
+    hop: {
+      type: 'number',
+      description: 'A walk result: how many hops from the start it was reached at.',
+    },
+    via: {
+      type: 'string',
+      description: 'A walk result: the relation that reached it.',
+    },
+    semantics_tag: {
+      type: 'string',
+      description: "A walk result: `via`'s semantics_tag, when that relation declares one.",
+    },
   },
   required: ['type', 'id', 'data'],
 }
@@ -403,6 +519,350 @@ function enumOf(names: Iterable<string>): readonly string[] {
 }
 
 /**
+ * True when this relation is admitted by the walk's narrowings, whatever its propagation says.
+ *
+ * Split out from {@link narrowsWalk} because the two answers are both needed at derivation: which
+ * relations the narrowing selected, and which of those can actually be followed. A narrowing that
+ * selects a relation which declares no direction is the case worth naming precisely — the author
+ * named something real and got a walk that cannot move.
+ *
+ * @param declared - A relation declaration.
+ * @param spec - The walk being resolved.
+ */
+function admitsNarrowing(declared: LinkTypeDecl, spec: WalkSpec): boolean {
+  if (spec.relations.length > 0 && !spec.relations.includes(declared.name)) return false
+  if (
+    spec.semantics_tag.length > 0 &&
+    (declared.semanticsTag === undefined || !spec.semantics_tag.includes(declared.semanticsTag))
+  ) {
+    return false
+  }
+  return true
+}
+
+/**
+ * True when this relation may be followed by this walk: it declares a direction, and both
+ * narrowings admit it.
+ *
+ * The first clause is the whole rule of walkability, and it is a rule rather than a preference.
+ * A relation's direction is not derivable from the data, so the engine either reads one or
+ * invents one; the tag is deliberately *not* part of the test, because a tag says what a relation
+ * means and not which way a failure moves along it — a relation that declares a tag and no
+ * direction is therefore not walkable. The return type says so, so no caller has to assert it.
+ *
+ * @param declared - A relation declaration.
+ * @param spec - The walk being resolved.
+ */
+function narrowsWalk(
+  declared: LinkTypeDecl,
+  spec: WalkSpec,
+): declared is LinkTypeDecl & { propagation: Propagation } {
+  return declared.propagation !== undefined && admitsNarrowing(declared, spec)
+}
+
+/**
+ * Which way one step may move along a relation instance.
+ *
+ * Reduced to a pair of booleans because two of the three modes agree about a relation that
+ * propagates both ways: `downstream` and `upstream` differ only for a directioned relation, and
+ * `both` is both in every case. Three near-identical branches per mode would be one inverted
+ * branch away from a walk that reports the opposite of the truth.
+ *
+ * @param direction - The declaration's mode.
+ * @param propagation - The relation's declared direction.
+ */
+function stepDirections(
+  direction: WalkDirection,
+  propagation: Propagation,
+): { forward: boolean; backward: boolean } {
+  if (direction === 'both' || propagation === 'both') return { forward: true, backward: true }
+  // `forward` is the direction the relation is drawn in. A failure travels with that arrow only
+  // when the relation says so; `downstream` follows failures, `upstream` reverses them.
+  const withArrow =
+    direction === 'downstream' ? propagation === 'from_to' : propagation === 'to_from'
+  return { forward: withArrow, backward: !withArrow }
+}
+
+/**
+ * Walk outward from one id, breadth-first, over the relations that declare a failure direction.
+ *
+ * Breadth-first because the answer is a distance as much as a set, and because it makes the
+ * first arrival at an entity the shortest one — so "visited" and "already reported at a nearer
+ * hop" are the same statement, and a cycle costs one skip rather than a loop. Every entity is
+ * reported once, with the hop and the relation that reached it first.
+ *
+ * The walk is bounded by two different limits, and they mean different things: `depth` is how far
+ * the *declaration* says a failure reaches, and `maxResults` is how much of that the caller gets
+ * to see. The second one sets `truncated`; the first one does not, because a walk that stopped at
+ * its stated depth is complete for the question that was asked.
+ *
+ * Links are scanned once per visited entity rather than being indexed by endpoint. A domain pack is
+ * hundreds of instances and the graph is rebuilt on every write, so an index would be a second
+ * structure to keep in step with the one that a refresh replaces — and the cost that buys is a
+ * constant, not a growth in the answer.
+ *
+ * @param graph - Loaded graph, read afresh here so a write between calls is visible.
+ * @param spec - The declaration's walk: direction, depth, narrowings.
+ * @param modeName - Mode name, carried into the result.
+ * @param startId - Id of the entity to start from. An id nothing holds is an empty answer.
+ * @param maxResults - Cap on returned entities.
+ * @returns Entities reached, each with its hop, the relation that reached it and that relation's
+ *   tag; the edges traversed; and the counts that say whether the answer is partial.
+ */
+function walkFrom(
+  graph: OntologyGraph,
+  spec: WalkSpec,
+  modeName: string,
+  startId: string,
+  maxResults: number,
+): QueryResult {
+  // A walk has no `on`, so the id is looked up across every declared type rather than inside one.
+  // Two types may hold the same id — the schema forbids that only within a type — and when they
+  // do, the walk starts from both: choosing one would be the engine deciding which world the
+  // caller meant, and the hop counts would be quietly wrong about the other.
+  const queue: string[] = []
+  const visited = new Map<string, { hop: number; via?: string; semantics_tag?: SemanticsTag }>()
+  for (const object of graph.byId.values()) {
+    if (object.id !== startId || visited.has(object.key)) continue
+    visited.set(object.key, { hop: 0 })
+    queue.push(object.key)
+  }
+
+  // Reported in arrival order, which is hop order: `order[i]` and `traversed[i]` are the i-th
+  // entity and the edge that led to it, so the two lists cannot drift apart.
+  const order: string[] = []
+  const traversed: OntologyLink[] = []
+
+  for (let head = 0; head < queue.length; head += 1) {
+    const current = queue[head]
+    if (current === undefined) continue
+    const hit = visited.get(current)
+    if (hit === undefined) continue
+    if (hit.hop >= spec.depth) continue
+
+    for (const link of graph.links) {
+      const declared = graph.schema.linkTypes.get(link.type)
+      // Following a relation nobody declared would be following a name, not a relation.
+      if (declared === undefined || !narrowsWalk(declared, spec)) continue
+
+      const directions = stepDirections(spec.direction, declared.propagation)
+      const fromKey = `${link.fromType}:${link.from}`
+      const toKey = `${link.toType}:${link.to}`
+      let next: string | undefined
+      if (directions.forward && current === fromKey) next = toKey
+      else if (directions.backward && current === toKey) next = fromKey
+      if (next === undefined || visited.has(next)) continue
+      // A relation instance can point at an object that is not there. The loader has already
+      // reported that edge; reporting it here as a reached entity would put an instance that does
+      // not exist into an answer, and reporting it as a hop would make the walk look deeper than
+      // the graph it walked.
+      if (!graph.byId.has(next)) continue
+
+      visited.set(next, {
+        hop: hit.hop + 1,
+        via: link.type,
+        ...(declared.semanticsTag === undefined ? {} : { semantics_tag: declared.semanticsTag }),
+      })
+      order.push(next)
+      traversed.push(link)
+      queue.push(next)
+    }
+  }
+
+  const objects: ResultObject[] = []
+  const links: OntologyLink[] = []
+  for (const [index, key] of order.entries()) {
+    const object = graph.byId.get(key)
+    const hit = visited.get(key)
+    if (object === undefined || hit === undefined) continue
+    objects.push({
+      type: object.type,
+      id: object.id,
+      data: object.data,
+      hop: hit.hop,
+      ...(hit.via === undefined ? {} : { via: hit.via }),
+      ...(hit.semantics_tag === undefined ? {} : { semantics_tag: hit.semantics_tag }),
+    })
+    // The edge that led to this entity and no other: an edge to something the cap left out would
+    // contradict the rows it sits beside, which is the rule the traversal mode already follows.
+    const edge = traversed[index]
+    if (edge !== undefined) links.push(edge)
+  }
+
+  const capped = objects.slice(0, maxResults)
+  return {
+    mode: modeName,
+    objects: capped,
+    links: links.slice(0, capped.length),
+    total: objects.length,
+    returned: capped.length,
+    truncated: objects.length > capped.length,
+  }
+}
+
+/**
+ * Parse a walk declaration, warning about every part of it that cannot take effect.
+ *
+ * Nothing here falls back silently. A direction outside the three, a depth that is not a whole
+ * number of hops, a narrowing that names a relation or a tag this domain does not have — each of
+ * those is a declaration whose author believes something was stated, and each is reported. The
+ * one degradation that does not drop the mode is the depth cap: the declaration asks for more
+ * hops than the engine will walk, so the walk happens, shorter, and says so.
+ *
+ * @param name - Function name, for the messages.
+ * @param declaration - The function's raw declaration.
+ * @param graph - Loaded graph, for the relations and tags a narrowing is checked against.
+ * @param warnings - Collector for the messages.
+ * @returns The walk to run, or `undefined` when the declaration is unusable.
+ */
+function parseWalk(
+  name: string,
+  declaration: Record<string, unknown>,
+  graph: OntologyGraph,
+  warnings: string[],
+): WalkSpec | undefined {
+  const rawDirection = declaration.direction
+  if (rawDirection !== undefined) {
+    if (
+      typeof rawDirection !== 'string' ||
+      !WALK_DIRECTIONS.includes(rawDirection as WalkDirection)
+    ) {
+      warnings.push(
+        `function "${name}" declares direction "${String(rawDirection)}"; expected ` +
+          `${WALK_DIRECTIONS.join(', ')} — the mode is unavailable`,
+      )
+      return undefined
+    }
+  }
+  const direction: WalkDirection =
+    rawDirection === undefined ? WALK_DEFAULT_DIRECTION : (rawDirection as WalkDirection)
+
+  // Two keys the other primitives take and a walk does not. Both are reported rather than
+  // ignored, and the mode still runs: a declaration copied from a filter and renamed is a
+  // realistic mistake, and a clause that silently does nothing is worse than a slow tool —
+  // the author reads the declaration and believes the answers are filtered.
+  for (const key of ['on', 'where'] as const) {
+    if (declaration[key] !== undefined) {
+      warnings.push(
+        key === 'on'
+          ? `function "${name}" declares "on", which a walk has no use for — it starts at the id ` +
+              'in "by" and follows relations from there'
+          : `function "${name}" declares "where", which a walk does not narrow by — every entity ` +
+              'it reaches is reported',
+      )
+    }
+  }
+
+  const rawDepth = declaration.depth
+  if (
+    rawDepth !== undefined &&
+    (typeof rawDepth !== 'number' || !Number.isInteger(rawDepth) || rawDepth < 1)
+  ) {
+    warnings.push(
+      `function "${name}" declares depth ${String(rawDepth)}, which is not a whole number of ` +
+        'hops of at least 1 — the mode is unavailable',
+    )
+    return undefined
+  }
+  const asked = rawDepth === undefined ? WALK_DEFAULT_DEPTH : (rawDepth as number)
+  const depth = Math.min(asked, WALK_MAX_DEPTH)
+  if (depth < asked) {
+    warnings.push(
+      `function "${name}" declares depth ${asked}; walks are capped at ${WALK_MAX_DEPTH} hops, ` +
+        `so this one stops at ${WALK_MAX_DEPTH}`,
+    )
+  }
+
+  // A narrowing that is not a list is not a narrowing; reading it as "no narrowing" would widen
+  // the walk to every relation, which is the opposite of what its author asked for.
+  for (const key of ['relations', 'semantics_tag'] as const) {
+    if (declaration[key] !== undefined && !Array.isArray(declaration[key])) {
+      warnings.push(
+        `function "${name}" declares "${key}" as something other than a list — the mode is ` +
+          'unavailable',
+      )
+      return undefined
+    }
+  }
+  const relations = Array.isArray(declaration.relations) ? declaration.relations.map(String) : []
+  const semantics = Array.isArray(declaration.semantics_tag) ? declaration.semantics_tag.map(String) : []
+
+  for (const relation of relations) {
+    if (!graph.schema.linkTypes.has(relation)) {
+      warnings.push(
+        `function "${name}" narrows walk to relation "${relation}", which this domain does not ` +
+          'declare — the mode is unavailable',
+      )
+      return undefined
+    }
+  }
+  const tags: SemanticsTag[] = []
+  for (const tag of semantics) {
+    const known = SEMANTICS_TAGS.find((candidate) => candidate === tag)
+    if (known === undefined) {
+      warnings.push(
+        `function "${name}" narrows walk to semantics_tag "${tag}"; expected one of ` +
+          `${SEMANTICS_TAGS.join(', ')} — the mode is unavailable`,
+      )
+      return undefined
+    }
+    tags.push(known)
+  }
+
+  const spec: WalkSpec = { direction, depth, relations, semantics_tag: tags }
+  // A narrowing that selects nothing walkable leaves a mode that can only ever return nothing.
+  // That is worth saying at load: an empty answer from a correctly-asked question and an empty
+  // answer from a declaration that cannot take effect look identical to the model.
+  const walkable = [...graph.schema.linkTypes.values()].filter((declared) =>
+    narrowsWalk(declared, spec),
+  )
+  if (walkable.length === 0) {
+    const narrowed = relations.length > 0 || tags.length > 0
+    const selected = [...graph.schema.linkTypes.values()].filter((declared) =>
+      admitsNarrowing(declared, spec),
+    )
+    const available = [...graph.schema.linkTypes.values()]
+      .filter((declared) => declared.propagation !== undefined)
+      .map((declared) => declared.name)
+    const reachable =
+      available.length === 0 ? '' : ` — this domain can walk: ${available.join(', ')}`
+    warnings.push(
+      !narrowed
+        ? `function "${name}" uses walk, but no relation in this domain declares a propagation ` +
+          'direction, so a walk can never leave its start'
+        : selected.length === 0
+          ? `function "${name}" narrows walk to no declared relation; a walk can never leave its ` +
+            `start${reachable}`
+          : `function "${name}" narrows walk to ${selected.map((entry) => entry.name).join(', ')}, ` +
+            `which declare no propagation direction; a walk can never leave its start${reachable}`,
+    )
+  }
+
+  return spec
+}
+
+/**
+ * What a walk mode adds to the description the model reads.
+ *
+ * The declaration's own words come first, and the bound follows them, because the bound is what
+ * the model needs in order to ask a second question instead of concluding that the first one
+ * answered everything. The cap is stated even when the declaration asked for less than it, since
+ * that is the number that cannot be moved by editing the declaration.
+ *
+ * @param declared - The declaration's own description, if it supplied one.
+ * @param walk - The parsed walk.
+ */
+function walkModeDescription(declared: string, walk: WalkSpec): string {
+  const lead = declared.length > 0 ? `${declared} ` : ''
+  return (
+    `${lead}Walks ${walk.direction} at most ${walk.depth} ` +
+    `hop${walk.depth === 1 ? '' : 's'} along relations that declare which way a failure travels; ` +
+    `the cap is ${WALK_MAX_DEPTH} hops. Each reached entity carries its hop count, the relation ` +
+    "that reached it, and that relation's semantics_tag."
+  )
+}
+
+/**
  * Build the `ontology_query` dispatcher for the domain's declared functions.
  *
  * Every mode's parameters are gathered into one schema. A parameter is named by the
@@ -426,6 +886,8 @@ function deriveDispatcher(
     relation?: string
     /** For traverse: whether to walk the relation against its declared direction. */
     incoming: boolean
+    /** For walk: what to follow, how far, and which way. Parsed and checked at derivation. */
+    walk?: WalkSpec
     where: Record<string, unknown>
     /**
      * How the parameter is compared to the field it names.
@@ -474,8 +936,17 @@ function deriveDispatcher(
     // `reported_on` goes Issue -> Project, while "what is blocking this project"
     // starts at the project. Reversing at query time is the only way to answer that,
     // because an inverse relation cannot be derived from the data.
+    //
+    // `walk` reads the same key for a different question — which way a *failure* travels — so its
+    // three values are checked in `parseWalk` instead. Checking them here would refuse a walk for
+    // not being a traversal, and checking a traversal's two values there would do the reverse.
     const rawDirection = declaration.direction
-    if (rawDirection !== undefined && rawDirection !== 'outgoing' && rawDirection !== 'incoming') {
+    if (
+      primitive !== 'walk' &&
+      rawDirection !== undefined &&
+      rawDirection !== 'outgoing' &&
+      rawDirection !== 'incoming'
+    ) {
       warnings.push(
         `function "${name}" declares direction "${String(rawDirection)}"; expected "outgoing" or "incoming" — the mode is unavailable`,
       )
@@ -483,7 +954,9 @@ function deriveDispatcher(
     }
     const incoming = rawDirection === 'incoming'
 
-    if (primitive !== 'traverse') {
+    // A walk starts from an entity id and follows relations, so there is no single `on` type for
+    // it to be pointed at: the id belongs to whatever type holds it.
+    if (primitive !== 'traverse' && primitive !== 'walk') {
       if (on === undefined) {
         warnings.push(`function "${name}" uses ${primitive} but declares no "on"; the mode is unavailable`)
         continue
@@ -505,6 +978,12 @@ function deriveDispatcher(
       }
     }
 
+    // Parsed here rather than at call time so a declaration that cannot take effect is reported
+    // where the domain author is looking — with the other warnings from this load, beside the
+    // mode that is missing.
+    const walk = primitive === 'walk' ? parseWalk(name, declaration, graph, warnings) : undefined
+    if (primitive === 'walk' && walk === undefined) continue
+
     if (by === undefined && primitive !== 'filter_by') {
       warnings.push(`function "${name}" uses ${primitive} but declares no "by"; the mode is unavailable`)
       continue
@@ -521,22 +1000,27 @@ function deriveDispatcher(
             ? incoming
               ? `Id of the ${relationDecl?.to ?? 'entity'} to look back from`
               : `Id of the starting ${relationDecl?.from ?? 'entity'}`
-            : type !== undefined
-              ? describeFieldParam(type, by)
-              : by
+            : primitive === 'walk'
+              ? 'Id of the entity to start the walk from — the question "what does a failure here reach". An id nothing holds yields an empty result rather than an error.'
+              : type !== undefined
+                ? describeFieldParam(type, by)
+                : by
 
     modes.push({
       name,
       description:
-        description.length > 0
-          ? description
-          : `${primitive} over ${on ?? relation ?? ''}`.trim(),
+        walk !== undefined
+          ? walkModeDescription(description, walk)
+          : description.length > 0
+            ? description
+            : `${primitive} over ${on ?? relation ?? ''}`.trim(),
       primitive: primitive as Primitive,
       ...(by === undefined ? {} : { param: by }),
       ...(paramDescription === undefined ? {} : { paramDescription }),
       ...(on === undefined ? {} : { on }),
       ...(relation === undefined ? {} : { relation }),
       incoming,
+      ...(walk === undefined ? {} : { walk }),
       where,
       match,
     })
@@ -604,6 +1088,19 @@ function deriveDispatcher(
         throw new Error(
           `unknown mode "${modeName}"; available modes are: ${modes.map((m) => m.name).join(', ')}`,
         )
+      }
+
+      // A walk answers a question whose answer is a *path*, so it is handled before the
+      // single-hop cases: it takes the same one argument they do, and nothing they share with
+      // each other applies to it (no `on` type, no fixed `where`).
+      if (mode.walk !== undefined) {
+        const startId = mode.param === undefined ? undefined : optionalString(args, mode.param)
+        if (startId === undefined) {
+          throw new Error(`mode "${modeName}" requires argument "${mode.param ?? 'by'}"`)
+        }
+        // The graph is read here and not at derivation, so a write that refreshed it between
+        // calls is walked, exactly as the other modes read it.
+        return walkFrom(graph, mode.walk, modeName, startId, maxResults)
       }
 
       if (mode.primitive === 'traverse') {

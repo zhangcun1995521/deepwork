@@ -41,6 +41,40 @@ test('a relation resolves which field it reads: `via` when declared, else its ow
   assert.equal(implicit?.field, 'owns')
 })
 
+test('the two machine-readable relation keys are parsed, and absence stays absent', () => {
+  const schema = parseSchema(fixture('topology'))
+
+  // Which way a failure travels, and what the relation means. Both are read by the walk; neither
+  // is inferred from the other, which is why they are two keys and not one.
+  assert.equal(schema.linkTypes.get('depends_on')?.propagation, 'to_from')
+  assert.equal(schema.linkTypes.get('depends_on')?.semanticsTag, 'hard_dep')
+
+  // The warnings this fixture carries are the two deliberate negatives below, not a defect in the
+  // keys: parsing a relation that declares both is silent.
+  assert.equal(schema.warnings.length, 2)
+  assert.ok(schema.warnings.some((warning) => warning.includes('relation "reports_to"')), schema.warnings.join('\n'))
+
+  // A relation that declares a tag and no direction is legal and says something specific: what it
+  // means is known, which way a failure moves along it is not, and a walk may not fill that in.
+  assert.equal(schema.linkTypes.get('monitors')?.semanticsTag, 'observation')
+  assert.equal(schema.linkTypes.get('monitors')?.propagation, undefined)
+})
+
+test('a relation key outside its vocabulary is a warning, not a value', () => {
+  const schema = parseSchema(fixture('topology'))
+  const warnings = schema.warnings.join('\n')
+
+  // A direction nothing can read. Stored as though it meant something, a walk would have to guess
+  // what `upstream` propagates toward; reported, the relation is simply not walkable.
+  assert.ok(warnings.includes('relation "escalates_to" declares propagation "upstream"'), warnings)
+  assert.ok(warnings.includes('expected one of from_to, to_from, both'), warnings)
+  assert.equal(schema.linkTypes.get('escalates_to')?.propagation, undefined)
+
+  // The relation survives: an unreadable direction is not a malformed edge, so its edges are
+  // still derived and still reachable by the single-hop tools.
+  assert.equal(schema.linkTypes.has('escalates_to'), true)
+})
+
 test('a declared primary key wins', () => {
   const project = parseSchema(fixture('project-delivery')).objectTypes.get('Project')
   assert.equal(project?.primaryKey, 'project_id')

@@ -396,3 +396,247 @@ test('a match nothing understands drops the mode and says what was expected', ()
   }).properties.mode.enum
   assert.deepEqual(modes, ['covers_one', 'covers_any'])
 })
+
+// ── walk: a bounded walk over declared failure directions ─────────────────────────
+//
+// A one-hop read answers "what is wired to this"; the question an incident actually asks is
+// "what does this failure reach", which is a *path* and not one edge. The fixture is a chain of
+// six edges with a mutual dependency in the middle, a relation that declares a tag but no
+// direction, and a cluster attached to the far end — enough that every decision this primitive
+// makes shows up as a different answer: a reversed direction, a tag mistaken for a direction, a
+// depth that was not clamped, or a cycle that was not deduplicated would each change the result.
+
+/** The dispatcher of the topology fixture, whose modes are one walk each. */
+const topologyQuery = (): DerivedToolSpec =>
+  toolNamed(deriveTools(loadGraph(fixture('topology'))).tools, 'ontology_query')
+
+/** Ids of the reached entities, in the order the walk reported them. */
+const reached = (result: { objects: Array<{ id: string }> }): string[] =>
+  result.objects.map((object) => object.id)
+
+test('a walk is two hops deep by default, and the third hop is not there', () => {
+  // SVC-1 depends_on ... depends_on SVC-7. `depends_on` declares `to_from`, so a failure on
+  // SVC-7 reaches SVC-6, then SVC-5, then SVC-4 — three hops, of which the default takes two.
+  const result = run(topologyQuery(), { mode: 'downstream', start: 'SVC-7' })
+
+  assert.deepEqual(reached(result), ['SVC-6', 'SVC-5'])
+  assert.deepEqual(result.objects.map((object) => object.hop), [1, 2])
+  assert.equal(reached(result).includes('SVC-4'), false)
+})
+
+test('a depth above the cap is clamped to it, and the clamp is reported', () => {
+  const { tools, warnings } = deriveTools(loadGraph(fixture('topology')))
+  const result = run(toolNamed(tools, 'ontology_query'), { mode: 'deep', start: 'SVC-7' })
+
+  // `deep` asks for 9 hops. The chain is six edges long, so a walk that honoured 9 would return
+  // SVC-1 as well; a walk that stopped at an unclamped-by-accident depth would not.
+  assert.deepEqual(reached(result), ['SVC-6', 'SVC-5', 'SVC-4', 'SVC-3', 'SVC-2'])
+  assert.equal(reached(result).includes('SVC-1'), false)
+  assert.ok(
+    warnings.join('\n').includes('function "deep" declares depth 9; walks are capped at 5 hops'),
+    warnings.join('\n'),
+  )
+})
+
+test('only relations that declare a failure direction are walked', () => {
+  // `monitors` declares a tag (`observation`) and no direction, and its edge points exactly the
+  // way a walk would follow it if a tag were read as a direction: SVC-8 monitors SVC-7, and under
+  // `to_from` a failure on SVC-7 would reach SVC-8. It is not reached — a tag says what a
+  // relation means, never which way a failure moves along it.
+  const result = run(topologyQuery(), { mode: 'deep', start: 'SVC-7' })
+
+  assert.equal(reached(result).includes('SVC-8'), false)
+  assert.equal(reached(result).length, 5)
+})
+
+test('downstream, upstream and both follow the declared failure direction, not the arrow', () => {
+  const query = topologyQuery()
+  // `depends_on` is drawn SVC-4 -> SVC-5 and declares `to_from`, so what SVC-4 depends on is
+  // what can kill it: downstream from SVC-4 runs toward the lower numbers, upstream toward the
+  // higher ones. Swapping the two answers would be the whole failure mode this fixture exists
+  // for, and each mode reaches a different set, so neither can be the other by accident.
+  assert.deepEqual(reached(run(query, { mode: 'downstream', start: 'SVC-4' })), ['SVC-3', 'SVC-2'])
+  assert.deepEqual(reached(run(query, { mode: 'upstream', start: 'SVC-4' })), ['SVC-5', 'SVC-6'])
+
+  // Both reaches them together, nearest first, whichever way each was found.
+  assert.deepEqual(reached(run(query, { mode: 'both_ways', start: 'SVC-4' })), [
+    'SVC-3',
+    'SVC-5',
+    'SVC-2',
+    'SVC-6',
+  ])
+})
+
+test('a cycle terminates, and every entity is reported once at its shortest hop', () => {
+  // SVC-5 and SVC-6 depend on each other, so each is reachable from the other and the walk from
+  // SVC-7 runs into a loop. Breadth-first order makes the first arrival the shortest one, so the
+  // cycle costs one skip rather than an infinite walk or a second copy of SVC-6.
+  const result = run(topologyQuery(), { mode: 'deep', start: 'SVC-7' })
+
+  assert.deepEqual(reached(result), ['SVC-6', 'SVC-5', 'SVC-4', 'SVC-3', 'SVC-2'])
+  assert.deepEqual(result.objects.map((object) => object.hop), [1, 2, 3, 4, 5])
+  assert.equal(new Set(reached(result)).size, reached(result).length)
+})
+
+test('each reached entity carries its hop, the relation that reached it and that tag', () => {
+  const query = topologyQuery()
+  // Two different relations reach two entities at the same hop — SVC-6 through `depends_on` and
+  // CL-1 through `hosted_by` — so the relation has to be recorded per entity rather than per walk.
+  const result = run(query, { mode: 'both_ways', start: 'SVC-7' })
+  const byId = new Map(result.objects.map((object) => [object.id, object]))
+
+  assert.deepEqual(byId.get('SVC-6'), {
+    type: 'Service',
+    id: 'SVC-6',
+    data: { service_id: 'SVC-6', name: 'service-6', dependencies: ['SVC-7', 'SVC-5'] },
+    hop: 1,
+    via: 'depends_on',
+    semantics_tag: 'hard_dep',
+  })
+  assert.equal(byId.get('CL-1')?.hop, 1)
+  assert.equal(byId.get('CL-1')?.via, 'hosted_by')
+  assert.equal(byId.get('CL-1')?.semantics_tag, 'runtime_dep')
+  assert.equal(byId.get('SVC-5')?.hop, 2)
+  assert.equal(byId.get('SVC-5')?.via, 'depends_on')
+
+  // And the prose the model reads has to carry the same three facts, or a blast radius reaches it
+  // as a list with no shape.
+  assert.ok(query.render({}, result).includes('hop 1 via depends_on (hard_dep)'), query.render({}, result))
+})
+
+test('a walk narrowed by relation and by tag follows only what was named', () => {
+  const query = topologyQuery()
+
+  // Both narrowings reach the cluster, which no one-hop read can: `hosted_by` is `to_from`, so
+  // upstream from a service is "what could take it down".
+  assert.deepEqual(reached(run(query, { mode: 'only_depends_on', start: 'SVC-7' })), [
+    'SVC-6',
+    'SVC-5',
+  ])
+  assert.deepEqual(reached(run(query, { mode: 'only_runtime_dep', start: 'SVC-7' })), ['CL-1'])
+  assert.equal(
+    reached(run(query, { mode: 'only_depends_on', start: 'SVC-7' })).includes('CL-1'),
+    false,
+  )
+})
+
+test('a narrowing that can reach nothing says so, and answers nothing rather than everything', () => {
+  const { tools, warnings } = deriveTools(loadGraph(fixture('topology')))
+  const query = toolNamed(tools, 'ontology_query')
+  const joined = warnings.join('\n')
+
+  // A tag no relation carries, and a tag carried by a relation that declares no direction: two
+  // declarations that cannot take effect, both reported at load. Neither may fall back to walking
+  // every relation, which is what ignoring the narrowing would do.
+  assert.ok(joined.includes('function "narrows_to_nothing" narrows walk to no declared relation'), joined)
+  assert.ok(
+    joined.includes(
+      'function "narrows_to_unwalkable" narrows walk to monitors, which declare no propagation direction',
+    ),
+    joined,
+  )
+  assert.deepEqual(run(query, { mode: 'narrows_to_nothing', start: 'SVC-7' }).objects, [])
+  assert.deepEqual(run(query, { mode: 'narrows_to_unwalkable', start: 'SVC-7' }).objects, [])
+})
+
+test('a start id nothing holds is an empty answer, not an error', () => {
+  const query = topologyQuery()
+  const nothing = run(query, { mode: 'downstream', start: 'SVC-NOPE' })
+
+  assert.deepEqual(nothing.objects, [])
+  assert.equal(nothing.total, 0)
+  assert.equal(nothing.truncated, false)
+  assert.equal(query.render({}, nothing), '(nothing matched)')
+})
+
+test('a walk declaration nothing understands is dropped, and one that is only too deep is kept', () => {
+  const { tools, warnings } = deriveTools(loadGraph(fixture('topology')))
+  const joined = warnings.join('\n')
+
+  assert.ok(
+    joined.includes(
+      'function "sideways" declares direction "sideways"; expected downstream, upstream, both',
+    ),
+    joined,
+  )
+  // The dropped mode is gone from the enum; every sound one stays, which proves each was judged
+  // on its own declaration rather than the block being abandoned.
+  const modes = (toolNamed(tools, 'ontology_query').parameters as {
+    properties: { mode: { enum: string[] } }
+  }).properties.mode.enum
+  assert.deepEqual(modes, [
+    'downstream',
+    'upstream',
+    'both_ways',
+    'deep',
+    'only_depends_on',
+    'only_runtime_dep',
+    'narrows_to_nothing',
+    'narrows_to_unwalkable',
+    'with_a_filters_keys',
+  ])
+})
+
+test('a walk ignores the keys a filter takes, and says so rather than pretending', () => {
+  const { tools, warnings } = deriveTools(loadGraph(fixture('topology')))
+  const joined = warnings.join('\n')
+  const query = toolNamed(tools, 'ontology_query')
+
+  // `on` and `where` are established keys of the other primitives and mean nothing to a walk. The
+  // mode still runs — it is not a malformed declaration — but the clauses are named, because an
+  // author who believes a walk is filtered reads a complete answer as a narrowed one.
+  assert.ok(joined.includes('function "with_a_filters_keys" declares "on", which a walk has no use for'), joined)
+  assert.ok(joined.includes('function "with_a_filters_keys" declares "where", which a walk does not narrow by'), joined)
+  assert.deepEqual(
+    reached(run(query, { mode: 'with_a_filters_keys', start: 'SVC-7' })),
+    reached(run(query, { mode: 'downstream', start: 'SVC-7' })),
+  )
+})
+
+test('a walk capped by the result limit says so, and keeps its edges beside its entities', () => {
+  const { tools } = deriveTools(loadGraph(fixture('topology')), { maxResults: 2 })
+  const result = run(toolNamed(tools, 'ontology_query'), { mode: 'deep', start: 'SVC-7' })
+
+  assert.equal(result.total, 5)
+  assert.equal(result.returned, 2)
+  assert.equal(result.truncated, true)
+  // One edge per returned entity and none for the rows the cap left out, so the edges cannot
+  // describe a reach the result does not show.
+  assert.deepEqual(
+    result.links.map((link) => `${link.from} -[${link.type}]-> ${link.to}`),
+    ['SVC-6 -[depends_on]-> SVC-7', 'SVC-5 -[depends_on]-> SVC-6'],
+  )
+})
+
+test('a walk mode says its bound in the description the model reads', () => {
+  const query = topologyQuery()
+
+  // The limit is not the model's to discover by asking twice: the cap is stated, and so is the
+  // depth that applies to each mode — which for `deep` is the clamped one, not the declared one.
+  assert.ok(query.description.includes('the cap is 5 hops'), query.description)
+  assert.ok(query.description.includes('at most 2 hops'), query.description)
+  assert.ok(query.description.includes('at most 5 hops'), query.description)
+})
+
+test('a relation declaring prose semantics is warned about, not silently ignored', () => {
+  const graph = loadGraph(fixture('topology'))
+  const joined = graph.warnings.join('\n')
+
+  // `reports_to` writes a sentence where a tag belongs. It reads as a statement and takes effect
+  // as nothing, which is the defect this check exists for — the user's own domain did exactly this.
+  assert.ok(
+    joined.includes(
+      'relation "reports_to" declares semantics_tag "the on-call rotation owns this edge"',
+    ),
+    joined,
+  )
+  assert.ok(
+    joined.includes('expected one of hard_dep, runtime_dep, traffic, aggregation, redundancy'),
+    joined,
+  )
+  // The relation itself survives: a bad tag is not a bad relation, and dropping it would lose
+  // edges that are really there.
+  assert.equal(graph.schema.linkTypes.has('reports_to'), true)
+  assert.equal(graph.schema.linkTypes.get('reports_to')?.semanticsTag, undefined)
+})
+

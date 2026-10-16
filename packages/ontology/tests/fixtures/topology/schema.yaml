@@ -1,0 +1,168 @@
+version: "1.0"
+
+# Fixture domain: a small topology whose relations declare which way a failure travels.
+#
+# The fixture exists for the one question a one-hop read cannot express. `depends_on` is drawn
+# from the dependent to what it depends on, and it is the *target* that fails and the *source*
+# that feels it — so a reader that followed arrows would answer the wrong question, and a walk
+# that guessed the direction would answer it wrongly without saying so. Everything here is
+# arranged so that a wrong direction, a wrong depth, or a walked relation nobody declared a
+# direction for produces a visibly different answer.
+#
+# Four things in the data are deliberate:
+#
+#   - a chain deep enough (six edges) that the depth cap of 5 stops it one short, which is what
+#     makes "clamped" observable rather than asserted;
+#   - a mutual dependency between SVC-5 and SVC-6, so the walk has a cycle to terminate in;
+#   - `monitors`, which declares what it means and not which way a failure travels, where the
+#     edge points the way a walk *would* follow if a tag were mistaken for a direction;
+#   - SVC-8, which exists only to be the far end of that monitors edge.
+
+object_types:
+  Service:
+    primary_key: service_id
+    required_fields: [service_id, name]
+    file_location: objects/services/SVC-*.yaml
+    written_by: [curator]
+    fields:
+      service_id: { type: string, required: true }
+      name: { type: string, required: true }
+      # The field `depends_on` reads, and the reason `via` is declared: the relation carries the
+      # fact, and the field is named for the fact rather than for the relation.
+      dependencies: { type: array, items: string }
+      cluster: { type: string }
+      monitors: { type: array, items: string }
+
+  Cluster:
+    primary_key: cluster_id
+    required_fields: [cluster_id, name]
+    file_location: objects/clusters/CL-*.yaml
+    written_by: [curator]
+    fields:
+      cluster_id: { type: string, required: true }
+      name: { type: string, required: true }
+
+link_types:
+  # Drawn from the dependent to what it depends on. `to_from` says what the arrow cannot: a failure
+  # at the target is what reaches the source.
+  depends_on:
+    from: Service
+    to: Service
+    via: dependencies
+    propagation: to_from
+    semantics_tag: hard_dep
+    description: >
+      What this service needs in order to serve. A failure at what it depends on reaches the
+      service, never the reverse.
+
+  # Drawn from the service to the cluster it runs on, and a failure travels the same way as above:
+  # the cluster goes down and the services on it are what feel it.
+  hosted_by:
+    from: Service
+    to: Cluster
+    via: cluster
+    propagation: to_from
+    semantics_tag: runtime_dep
+    description: >
+      Where this service runs. A failure at the cluster reaches every service hosted on it.
+
+  # A tag and no direction. `observation` says what the relation is for; it does not say which way
+  # a failure moves, and this edge is drawn so that a walk treating the tag as a direction would
+  # follow it. A walk must not.
+  monitors:
+    from: Service
+    to: Service
+    via: monitors
+    semantics_tag: observation
+    description: >
+      One service watching another. Nothing is claimed about failure, so nothing may be followed.
+
+  # Prose where a tag belongs. This is the declaration the warning exists for: it reads like a
+  # statement, takes effect as nothing, and used to be ignored in silence.
+  reports_to:
+    from: Service
+    to: Service
+    via: reports_to
+    semantics_tag: the on-call rotation owns this edge
+
+  # A direction outside the three the engine can read. Stored as if it meant something, a walk
+  # would have to guess what it propagates toward; reported, the relation is simply not walkable —
+  # and it survives, because an unreadable direction is not a malformed edge.
+  escalates_to:
+    from: Service
+    to: Service
+    via: escalates_to
+    propagation: upstream
+
+functions:
+  # ── the walk, one mode per decision it makes ──────────────────────────────────────────────
+  #
+  # The two structural tools cannot ask any of these questions, and the three older primitives
+  # cannot either: each of them answers about one hop or about one type, and the questions below
+  # are about distance along a graph.
+  downstream:
+    description: What a failure on this object reaches.
+    use: walk
+    by: start
+
+  upstream:
+    description: What could take this object down.
+    use: walk
+    by: start
+    direction: upstream
+
+  both_ways:
+    description: Both directions in one answer.
+    use: walk
+    by: start
+    direction: both
+
+  deep:
+    description: Asks for more hops than the engine will walk.
+    use: walk
+    by: start
+    depth: 9
+
+  only_depends_on:
+    description: The dependency chain alone, narrowed by relation name.
+    use: walk
+    by: start
+    relations: [depends_on]
+
+  only_runtime_dep:
+    description: The runtime dependencies alone, narrowed by tag.
+    use: walk
+    by: start
+    direction: both
+    semantics_tag: [runtime_dep]
+
+  # Two ways a narrowing can fail to take effect: a tag no relation carries, and a tag carried by
+  # a relation that declares no direction. Both are warnings at load, because both leave a mode
+  # that can only ever return nothing.
+  narrows_to_nothing:
+    description: Narrows to a tag this domain does not use.
+    use: walk
+    by: start
+    semantics_tag: [traffic]
+
+  narrows_to_unwalkable:
+    description: Narrows to a relation that declares no failure direction.
+    use: walk
+    by: start
+    semantics_tag: [observation]
+
+  sideways:
+    description: Declares a direction nothing understands.
+    use: walk
+    by: start
+    direction: sideways
+
+  # The keys a filter takes, carried over to a walk. Both are reported: a walk starts at an id and
+  # has no type to filter by, and it does not narrow what it reaches — silently ignoring either one
+  # would let an author read the declaration and believe the answers were filtered.
+  with_a_filters_keys:
+    description: A walk declaring keys only a filter uses.
+    use: walk
+    by: start
+    on: Service
+    where: { name: service-1 }

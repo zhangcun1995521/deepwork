@@ -14,17 +14,19 @@ version: "1.0"
 # read tools and appearing in the same `type` enum. A separate graph layer would be a second place
 # where "what exists" is written down, and the second one is the one that goes stale.
 #
-# The second is that the arrow and the failure do not always point the same way. `depends_on` is
-# drawn from the dependent to what it depends on, and a failure at the *target* is what reaches the
-# source — the opposite direction from the arrow. `hosted_by` is drawn from the service to its
-# cluster, and there a failure at the target reaches the source the same way the arrow points.
-# Anybody reading these edges for impact has to know which is which, which is why each one says so
-# in its own description rather than leaving it to be inferred from the name.
+# The second is that the arrow and the failure are two different facts, so each relation states the
+# second one in `propagation`. All four relations here are drawn from the thing that is affected to
+# the thing whose failure it feels — `depends_on` runs checkout → payments, and it is payments
+# failing that strands checkout — so all four declare `to_from`. That is not a detail a reader can
+# recover from the names: the same arrow is drawn the other way in a domain that models
+# "payments serves checkout", and what makes `blast_radius` an answer rather than a guess is that
+# the direction is written down.
 #
-# The third is the limit, and it is stated here rather than discovered later: the direction a
-# failure travels is *written down*, not computed. Nothing in this repository walks a failure
-# outward from an object — the read tools follow one relation, one hop, and no further — so the
-# impact half of the question above is a fact a person reads, not an answer a tool returns.
+# The third is that the walk which uses this is bounded, and the bound is part of the declaration:
+# `blast_radius` takes two hops by default, five at most, and it follows only relations that say
+# which way a failure moves. Everything past that — a longer reach, or a relation nobody declared a
+# direction for — is not walked, and the result says how far it went rather than leaving the
+# question open.
 
 object_types:
   # A running service, in the sense the topology cares about: something that can be reached, can go
@@ -107,34 +109,90 @@ link_types:
     from: Service
     to: Service
     via: dependencies
+    propagation: to_from
+    semantics_tag: hard_dep
     description: >
       What this service needs in order to serve. Drawn from the dependent to what it depends on,
       so the arrow points one way and a failure travels the other: when the target is down, the
       source is affected, and never the reverse.
 
-  # A failure at the target reaches the source — with the arrow.
+  # A failure at the target reaches the source, exactly as `depends_on` has it: the cluster is the
+  # target, the services on it are what feel it, and the edge is drawn the opposite way round.
   hosted_by:
     from: Service
     to: Cluster
     via: cluster
+    propagation: to_from
+    semantics_tag: runtime_dep
     description: >
-      Where this service runs. A failure at the target reaches the source in the direction the
-      arrow already points: the cluster goes down and every service on it goes with it. This is
-      how a set of services that have nothing declared in common turn out to fail together.
+      Where this service runs. Drawn from the service to its cluster, and the failure runs back
+      along it: the cluster goes down and every service on it goes with it. This is how a set of
+      services that have nothing declared in common turn out to fail together.
 
   in_cluster:
     from: Device
     to: Cluster
     via: cluster
+    # The only relation here whose failure runs both ways, and the reason is in the domain rather
+    # than in convenience: a cluster's control plane failing takes its machines out of service, and
+    # enough machines failing leaves the cluster without quorum. Declaring `to_from` alone was the
+    # first version and it made the pack's own story false — a rack losing power reached the
+    # machines on it and stopped there, when the thing that makes one rack a cluster-wide event is
+    # exactly the second direction.
+    propagation: both
+    semantics_tag: runtime_dep
     description: >
-      Which cluster this machine belongs to. A failure at the target reaches the source, with the
-      arrow: a cluster's control plane failing takes its machines out of service.
+      Which cluster this machine belongs to. Failure runs both ways along it: a failure at the
+      target reaches the source, because a cluster's control plane failing takes its machines out
+      of service, and a failure at the source reaches the target, because enough machines failing
+      leaves the cluster without quorum.
 
   in_rack:
     from: Device
     to: Rack
     via: rack
+    propagation: to_from
+    semantics_tag: hard_dep
     description: >
-      Which rack the machine sits in. A failure at the target reaches the source, with the arrow.
-      The only edge here that ends in the physical world, and the one with the broadest reach: one
-      rack losing power is one fact and every service on it is a consequence.
+      Which rack the machine sits in. A failure at the target reaches the source: a rack losing
+      power takes the machines on it with it. The only edge here that ends in the physical world,
+      and the one whose failure needs no interpretation — the machine is simply gone.
+
+functions:
+  # The question this example was built around, and until now could only be answered by a person
+  # reading the relations: what a failure on one object reaches.
+  #
+  # Downstream, because that is the direction a failure travels: what breaks *because* this failed.
+  # The other half of the question — what could take this down — is the same walk declared
+  # `direction: upstream`, and it is not folded into this one, because an answer that silently
+  # contains both directions is a blast radius nobody can read.
+  #
+  # The `semantics_tag` narrowing is a policy rather than a count: a blast radius follows dependencies
+  # and not observations, so a relation tagged `observation` or `annotation` stays out of it even
+  # if somebody later declares a direction on one.
+  blast_radius:
+    description: >
+      Everything a failure on this object reaches, following the direction each relation declares
+      for failure.
+    use: walk
+    by: object_id
+    direction: downstream
+    # Three, and the number is a fact about this pack rather than a default somebody liked: the
+    # physical chain here is rack → machine → cluster → service, so a rack losing power reaches the
+    # services on it at the third hop. Declared at two it would answer a narrower question than the
+    # one it names and read as complete — which is the failure mode this primitive exists to make
+    # impossible rather than to hide: a blast radius that stops early looks exactly like a small one.
+    depth: 3
+    semantics_tag: [hard_dep, runtime_dep]
+
+  # The other half of the same question: what a failure *here* could be caused by. Declared as its
+  # own mode rather than as a `direction` argument, because the two are different questions and an
+  # answer that silently mixed them would be a blast radius nobody can read.
+  failure_sources:
+    description: >
+      What could take this object down, walking the declared failure directions backwards.
+    use: walk
+    by: object_id
+    direction: upstream
+    depth: 2
+    semantics_tag: [hard_dep, runtime_dep]

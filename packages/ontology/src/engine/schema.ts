@@ -111,6 +111,65 @@ export interface SkillDecl {
   groupBy?: string
 }
 
+/**
+ * Which way a *failure* travels along a relation.
+ *
+ * The arrow a relation is drawn with and the direction a failure travels are two different
+ * facts, and neither follows from the other: `X depends_on Y` is drawn from the dependent to
+ * what it depends on, and a failure at Y is what reaches X. Stating it as one of three values
+ * is what lets a walk follow failures rather than arrows.
+ *
+ *   - `from_to` — a failure on the `from` instance reaches the `to` instance. The shape of
+ *     `routes_to`: the thing that routes is the thing whose failure strands the target.
+ *   - `to_from` — a failure on the `to` instance reaches the `from` instance. The shape of
+ *     `depends_on`: "X depends_on Y" is declared `from: X, to: Y`, and Y dying is what X feels.
+ *   - `both` — either side failing reaches the other, as in a pair of replicas.
+ */
+export type Propagation = 'from_to' | 'to_from' | 'both'
+
+/**
+ * The closed vocabulary of `propagation`. A value outside it cannot be followed by anything,
+ * so it is reported rather than stored — see the warning in `parseSchema`.
+ *
+ * The prior art spells the same three ideas `src_to_dst`, `dst_to_src` and `bidirectional`. These
+ * names say what the value means without a reader having to remember which end `src` was — which
+ * is the whole difficulty the key exists to remove.
+ */
+export const PROPAGATIONS: readonly Propagation[] = ['from_to', 'to_from', 'both']
+
+/**
+ * What a relation means operationally, from the AIOps prior art's fixed set.
+ *
+ * Reported per hop by a walk and usable as a narrowing, so a declaration can say "follow the
+ * hard dependencies" without naming each relation. It is deliberately *not* what makes a
+ * relation walkable: a tag says what a relation means, `propagation` says which way a failure
+ * moves along it, and a walk that guessed the second from the first would be inventing a fact
+ * the domain never stated.
+ */
+export type SemanticsTag =
+  | 'hard_dep'
+  | 'runtime_dep'
+  | 'traffic'
+  | 'aggregation'
+  | 'redundancy'
+  | 'observation'
+  | 'annotation'
+
+/**
+ * The closed vocabulary of `semantics_tag`. A prose sentence in this key is the case the warning
+ * exists for: it reads like a declaration, takes effect as nothing, and — before this was
+ * checked — was silently ignored.
+ */
+export const SEMANTICS_TAGS: readonly SemanticsTag[] = [
+  'hard_dep',
+  'runtime_dep',
+  'traffic',
+  'aggregation',
+  'redundancy',
+  'observation',
+  'annotation',
+]
+
 /** A relation type: a named, directed edge between two object types. */
 export interface LinkTypeDecl {
   /** Relation name, exactly as declared under `link_types`. */
@@ -130,6 +189,17 @@ export interface LinkTypeDecl {
   field: string
   /** Human-readable meaning. */
   description?: string
+  /**
+   * Which way a failure travels along this relation. Undefined means the domain has not said,
+   * and that is a real answer: a relation nobody declared a direction for is *not walkable*,
+   * because a walk that guessed would be reporting an inferred direction as a declared one.
+   */
+  propagation?: Propagation
+  /**
+   * What this relation means, from the closed vocabulary above. Undefined is ordinary — most
+   * relations are not tagged, and nothing about walkability depends on the tag being there.
+   */
+  semanticsTag?: SemanticsTag
   /** The declaration as parsed. */
   raw: Record<string, unknown>
 }
@@ -341,6 +411,56 @@ function parseSkillDecl(
 }
 
 /**
+ * Read one relation's `propagation`, warning when the value is not in the vocabulary.
+ *
+ * A value outside the three cannot be followed by a walk, so keeping it would leave a
+ * declaration that looks like it took effect and did not. Absent is not a defect: a domain
+ * that has said nothing about which way a failure travels has said something usable, and the
+ * walk treats the relation as unwalkable rather than guessing.
+ *
+ * @param name - Relation name, for the message.
+ * @param value - The declaration's raw `propagation`.
+ * @param warnings - Collector for the message.
+ */
+function parsePropagation(
+  name: string,
+  value: unknown,
+  warnings: string[],
+): Propagation | undefined {
+  if (value === undefined || value === null) return undefined
+  const known = PROPAGATIONS.find((candidate) => candidate === value)
+  if (known !== undefined) return known
+  warnings.push(
+    `relation "${name}" declares propagation "${String(value)}"; expected one of ` +
+      `${PROPAGATIONS.join(', ')} — the relation is not walkable`,
+  )
+  return undefined
+}
+
+/**
+ * Read one relation's `semantics_tag`, warning when the value is not in the vocabulary.
+ *
+ * This is the check the key was added for. `semantics_tag` used to be read by nothing, so a domain
+ * could write a sentence in it — which the user's own domain did — and get a relation that
+ * reads as documented and behaves as untagged. A tag is either one of the seven or it is not a
+ * tag, and only the second half needs saying out loud.
+ *
+ * @param name - Relation name, for the message.
+ * @param value - The declaration's raw `semantics_tag`.
+ * @param warnings - Collector for the message.
+ */
+function parseSemantics(name: string, value: unknown, warnings: string[]): SemanticsTag | undefined {
+  if (value === undefined || value === null) return undefined
+  const known = SEMANTICS_TAGS.find((candidate) => candidate === value)
+  if (known !== undefined) return known
+  warnings.push(
+    `relation "${name}" declares semantics_tag "${String(value)}"; expected one of ` +
+      `${SEMANTICS_TAGS.join(', ')} — nothing is claimed about it`,
+  )
+  return undefined
+}
+
+/**
  * Parse and validate a domain pack's `schema.yaml`.
  *
  * Throws when the schema file cannot be read or is not a mapping — see the module
@@ -441,6 +561,11 @@ export function parseSchema(root: string): OntologySchema {
       warnings.push(`link type "${name}" declares an empty "via"; falling back to the relation name`)
     }
 
+    // Both keys are parsed once, so a bad value warns once rather than once per reader, and
+    // absent stays absent rather than being filled with a default nothing declared.
+    const propagation = parsePropagation(name, decl.propagation, warnings)
+    const semanticsTag = parseSemantics(name, decl.semantics_tag, warnings)
+
     linkTypes.set(name, {
       name,
       from,
@@ -448,6 +573,8 @@ export function parseSchema(root: string): OntologySchema {
       ...(via === undefined ? {} : { via }),
       field: via ?? name,
       ...(typeof description === 'string' ? { description } : {}),
+      ...(propagation === undefined ? {} : { propagation }),
+      ...(semanticsTag === undefined ? {} : { semanticsTag }),
       raw: decl,
     })
   }
