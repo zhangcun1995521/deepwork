@@ -1,0 +1,59 @@
+# Every push runs the tests, and the domain check, on a machine that is not the author's — so "the
+# suite is green" is something a reader can verify rather than take on trust.
+#
+# The repository's own claim is what makes this cheap: nothing here needs a runtime, an API key or an
+# agent, because no package depends on the host at test time. The job installs, then runs in about a
+# minute.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned to the lockfile's own format (lockfileVersion 9.0). `--frozen-lockfile` refuses to
+      # migrate it, so a pnpm that writes a newer format would fail at the install rather than at the
+      # tests, which would be a confusing way to learn that the tooling moved.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # The host is a dependency of the root, on the public registry, and pinned in the lockfile.
+      - run: pnpm install --frozen-lockfile
+
+      # Every package that has tests, discovered rather than listed: a package that grows a `test`
+      # script is covered without editing this file, and one that has none (the smoke-test plugin) is
+      # skipped instead of reported as a failure with nothing to run.
+      - name: Tests
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("node:fs")
+            for (const entry of fs.readdirSync("packages")) {
+              const file = `packages/${entry}/package.json`
+              if (!fs.existsSync(file)) continue
+              const scripts = JSON.parse(fs.readFileSync(file, "utf8")).scripts ?? {}
+              if (scripts.test) console.log(entry)
+            }
+          ' | while read -r name; do
+            echo "::group::packages/$name"
+            (cd "packages/$name" && npm test)
+            echo "::endgroup::"
+          done
+
+      # The check that a domain's declarations all took effect. It is the one step here whose failure
+      # is about the domain rather than the code, and it is half the reason this job exists: a
+      # declaration that silently stopped applying is a red build, not a note in a log.
+      - name: Domain check
+        run: npm run validate

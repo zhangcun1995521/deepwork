@@ -1,5 +1,7 @@
 # DeepWork
 
+[![CI](https://github.com/zhangcun1995521/deepwork/actions/workflows/ci.yml/badge.svg)](https://github.com/zhangcun1995521/deepwork/actions/workflows/ci.yml)
+
 > An enterprise agent has to know what a project is, who owns it, which customer it belongs
 > to, and **what it is allowed to touch**. DeepWork is where an enterprise writes that down —
 > and where an agent's tools and permissions are derived from it, and enforced.
