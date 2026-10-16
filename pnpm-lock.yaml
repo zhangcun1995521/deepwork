@@ -30,7 +30,7 @@ importers:
         specifier: 0.1.7-rc.2
         version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))
       '@zhangcun123/ontology':
-        specifier: file:../ontology
+        specifier: workspace:^0.1.26
         version: link:../ontology
     devDependencies:
       '@types/node':

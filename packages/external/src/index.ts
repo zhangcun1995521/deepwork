@@ -87,14 +87,16 @@ export interface ExternalContext {
   tools: { register(tool: RegisteredTool): void }
   logger?: { warn(message: string): void }
   /**
-   * The host's credential seam.
+   * The runtime's own service lookup.
    *
-   * Optional, and read here rather than injected by name, because that is how the host publishes it.
-   * A deployment with none still loads this plugin and is told at load that every call will be
-   * refused, which is a better answer than a boot failure over a capability that has not been
-   * configured yet.
+   * Used for the one thing this plugin cannot survive without: the host's credential seam. A
+   * context *property* read is the obvious way to reach it and is wrong — cordis refuses a property
+   * read on a service the plugin has not declared, with `cannot get property "credentials" without
+   * inject`, which takes the whole row down at load and the tool with it. `get` asks the same
+   * question without the declaration, which is what an opportunistic consumer wants: this plugin is
+   * useful in a composition with no seam at all and has to load in one.
    */
-  credentials?: CredentialSurface
+  get?(name: string): unknown
   /**
    * Look up a service by name once a context carrying it exists.
    *
@@ -131,6 +133,27 @@ const TOOL_NAME = 'reach_system'
  */
 function programOf(command: string): string {
   return basename(command.trim().split(/\s+/)[0] ?? '')
+}
+
+/**
+ * The host's credential seam, read the way a capability is allowed to read a service.
+ *
+ * Through the runtime's lookup rather than as a context property, which is the difference between a
+ * tool that loads and one that does not: cordis answers a property read on an undeclared service
+ * with `cannot get property "credentials" without inject`, thrown from `apply` — so the row fails,
+ * the tool is never registered, and the composition reports it as one entry that did not activate.
+ * The unit tests did not catch that because their context was a plain object, where the property was
+ * simply there; the fixture that stands in for the runtime now throws on that read too.
+ *
+ * Read again on every call rather than captured once, because the seam's own contract is that a
+ * consumer resolves per operation: a provider mounted after this plugin, or a credential rotated
+ * underneath it, has to reach the next call.
+ *
+ * @param ctx - The runtime context, as this plugin sees it.
+ * @returns The seam, or `undefined` in a composition that mounts none.
+ */
+function seamOf(ctx: ExternalContext): CredentialSurface | undefined {
+  return ctx.get?.('credentials') as CredentialSurface | undefined
 }
 
 /**
@@ -235,7 +258,7 @@ export function apply(ctx: ExternalContext, config: Config = {}): void {
         'program; the tool still works, every call reaching whatever the program reaches on its own',
     )
   }
-  if (ctx.credentials === undefined) {
+  if (seamOf(ctx) === undefined) {
     warn(
       'external: no credential service is mounted, so every call will be refused — a route files ' +
         'its credential in the host\'s seam, and there is no seam here to file one in',
@@ -289,7 +312,7 @@ export function apply(ctx: ExternalContext, config: Config = {}): void {
         program,
         timeoutSeconds,
         auditLog,
-        ...(ctx.credentials === undefined ? {} : { credentials: ctx.credentials }),
+        ...(seamOf(ctx) === undefined ? {} : { credentials: seamOf(ctx) as CredentialSurface }),
       })
     },
   })

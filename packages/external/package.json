@@ -1,6 +1,6 @@
 {
   "name": "@zhangcun123/external",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Reach an outside system by the route the deployment's own domain declares — a capability plugin for DeepWork.",
   "license": "MIT",
   "type": "module",
@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-credentials": "0.1.7-rc.2",
-    "@zhangcun123/ontology": "file:../ontology"
+    "@zhangcun123/ontology": "workspace:^0.1.26"
   },
   "author": "zhangcun1995521",
   "repository": {

@@ -67,6 +67,9 @@ function harness(options: { governance?: boolean; inject?: boolean } = {}): Harn
       },
     },
     logger: { warn: (message) => state.logs.push(message) },
+    // The lookup a capability is allowed to use for a service it has not declared. Nothing here
+    // publishes a credential seam, which is the composition this suite is about.
+    get: () => undefined,
     ...(options.inject === false
       ? {}
       : {
@@ -85,6 +88,15 @@ function harness(options: { governance?: boolean; inject?: boolean } = {}): Harn
           }) as ExternalContext['inject'],
         }),
   }
+  // The runtime answers a context *property* read on an undeclared service with this error, thrown
+  // out of `apply` — the row fails and the tool is never registered. The fixture throws it too, so
+  // the difference between a lookup and a property read cannot regress unnoticed: this suite was
+  // green the day a real composition refused to load the plugin for exactly this.
+  Object.defineProperty(state.ctx, 'credentials', {
+    get() {
+      throw new Error('cannot get property "credentials" without inject')
+    },
+  })
   return state
 }
 

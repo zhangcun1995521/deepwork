@@ -114,7 +114,9 @@ function deployment(
       if (names.includes('deepworkGovernance')) return
       callback({} as never)
     }) as ExternalContext['inject'],
-    ...(options.credentials === undefined ? {} : { credentials: options.credentials }),
+    // The seam is reached through the runtime's lookup, and only through it: a property read is what
+    // cordis refuses on an undeclared service, and that refusal is what this stands in for.
+    get: (name) => (name === 'credentials' ? options.credentials : undefined),
   }
 
   apply(ctx, {
