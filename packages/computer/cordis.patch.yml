@@ -1,0 +1,20 @@
+# The composition layer this bundle contributes.
+#
+# Declaring `dsh.bundle.patch` is what turns this package from an inert dependency into a profile
+# layer, the same way the ontology and test-runner plugins do it. The row names the package by its
+# bare name so the profile's own node_modules resolves it.
+
+- insert:
+    - id: deepwork-computer
+      name: '@zhangcun123/computer'
+      config:
+        # Every `!!js` expression is a single-quoted scalar on one line, and that is not cosmetic:
+        # YAML reads a bare scalar containing ` : ` as a mapping, and a folded one arrives as an
+        # unresolved string — either shape reaches the plugin as something that is not the setting
+        # and the row fails to load with nothing said.
+        #
+        # The window titles this deployment will speak to, as a comma-separated list. Empty means the
+        # deployment named none, and every window is addressable — see the plugin's own note on why
+        # that permissive default is stated rather than hidden. Name the applications you expect an
+        # agent to touch.
+        applications: !!js '(process.env.DEEPWORK_COMPUTER_APPLICATIONS ?? "").split(",").map((s) => s.trim()).filter((s) => s.length > 0)'

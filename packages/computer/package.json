@@ -1,0 +1,37 @@
+{
+  "name": "@zhangcun123/computer",
+  "version": "0.3.2",
+  "description": "Look at, and act on, this machine's desktop — a capability plugin for DeepWork.",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/types/**/*.d.ts",
+    "src/scripts/**/*.ps1",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "build": "tsc -p tsconfig.json",
+    "prepack": "tsc -p tsconfig.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "author": "zhangcun1995521",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhangcun1995521/deepwork.git"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}

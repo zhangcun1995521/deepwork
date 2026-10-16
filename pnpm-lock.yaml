@@ -15,6 +15,15 @@ importers:
         specifier: 0.1.7-rc.2
         version: 0.1.7-rc.2(a9469415dd81c5f35bcaf43e91023545)
 
+  packages/computer:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.4
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.2
+
   packages/lsp:
     devDependencies:
       '@types/node':

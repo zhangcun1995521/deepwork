@@ -237,7 +237,7 @@ objects
 
 That second run is a governance model in fifteen lines, and not one of them was written by
 hand: it is the domain, read back. The enforcement behind those lines is described under
-[Governance](#governance) and checked by 362 tests.
+[Governance](#governance) and checked by 393 tests.
 
 ## What it looks like when an agent uses it
 
@@ -272,7 +272,7 @@ Working and demonstrated, not finished.
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-362 tests in total.
+393 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
@@ -416,6 +416,7 @@ domain was put through. `packages/ontology/tests/fixtures/ahead-of-its-data` now
 | `packages/test-runner` | a capability: run a project's tests and read what the run said (see its README) |
 | `packages/session-query` | a capability the host does not ship yet: the lineage around one session, so an agent can pick up what another started |
 | `packages/lsp` | the same kind of stand-in: ask a language server where something is defined, instead of guessing from a text match |
+| `packages/computer` | a capability: look at this machine's windows and elements and act on them — with the window scope a deployment names, a guard grant per program and per verb, and one approval per session rather than one per click |
 | `packages/role` | not a capability: the role a mode acts as and the prompt file it works under, registering nothing and publishing the role for the ontology to select rules by |
 | `packages/probe` | the smallest possible plugin, kept as the smoke test for the plugin route |
 | `tools/fde` | the FDE toolkit: qualify a use case before anything gets built (Python, runs standalone) |
