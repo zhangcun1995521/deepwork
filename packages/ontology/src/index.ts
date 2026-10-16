@@ -35,16 +35,6 @@ export const inject = ['tools']
 /** The route the browser half reads its data from. */
 export const DOMAIN_ROUTE = '/deepwork'
 
-/**
- * The service name the role plugin publishes its role under.
- *
- * A bare string rather than an imported symbol, because the two packages do not depend on each
- * other: a mode may state no role, and this plugin must load with no role plugin beside it. Where
- * they meet is a name both sides state — the same arrangement as the governance channel, in the
- * other direction.
- */
-const ROLE_SERVICE = 'deepworkRole'
-
 /** Plugin configuration, taken from the composition that mounts this plugin. */
 export interface Config {
   /**
@@ -71,6 +61,12 @@ export interface Config {
    * is what makes the answer a fact about the world rather than the model's choice. Empty is not
    * "inject nothing": a deployment that has not said where it is gets every rule, because the
    * rules are requirements and being unselective is the safe direction to be wrong in.
+   *
+   * The role this deployment acts as belongs here (`role:executor`), and it is the tag in practice:
+   * a state can say what stage the work reached, and nothing else can say who is doing it. It is
+   * declared here rather than taken from a mode, because that is where this plugin is mounted: a
+   * role stated inside a preset is published into the preset's own realm, and a profile-level mount
+   * cannot see it.
    */
   situation?: string
   /**
@@ -162,18 +158,6 @@ export interface SystemPromptSurface {
   }
   /** Tie the registration to this plugin's lifetime, the way the web route is tied. */
   effect?(callback: () => () => void, label?: string): void
-}
-
-/**
- * The role a mode acts as, as the plugin that carries it publishes it.
- *
- * Structural and optional, like the surfaces above: nothing here imports the role package, and a
- * deployment that mounts no role carries no such service — which is the ordinary case, and the one
- * where the situation is whatever was declared and nothing more.
- */
-export interface RoleSurface {
-  /** Absent when no role plugin is mounted, or when the one mounted states no role. */
-  deepworkRole?: { role: string }
 }
 
 /** The web surface a web-carrying profile provides. */
@@ -383,23 +367,6 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
   //
   // Registered the same lazy, optional way as the web route and the catalog, because a profile
   // may have no prompt registry and nothing above may depend on one existing.
-  //
-  // The role this mode acts as, from the plugin whose job it is.
-  //
-  // Kept out of this plugin's own config on purpose. "This mode acts as this role" is a statement
-  // about who an agent is, while a domain is about what the enterprise is; the fields sat here only
-  // because the ontology mount was the one thing a mode could configure, and the price of leaving
-  // them is that a mode stating its role needs a second mount of this plugin — and with it a second
-  // registration of every tool derived from the domain. It arrives over the service channel instead,
-  // named by both sides and imported by neither.
-  //
-  // Read per assembly rather than resolved once here, because the two packages are separate mounts
-  // and which of them loads first is the composition's business: the callback fires whenever the
-  // service appears, and `compute` reads whatever it left behind each time it runs.
-  let statedRole: string | undefined
-  ctx.inject?.([ROLE_SERVICE], (scoped: RoleSurface) => {
-    statedRole = scoped.deepworkRole?.role
-  })
 
   // The situation and the selection, computed from the domain **as it is right now**.
   //
@@ -417,16 +384,15 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
     const graph = loadGraph(ontologyRoot)
     const resolved = resolveActive(graph, config.active ?? '')
     const declared = parseSituation(config.situation ?? '')
-    // The role the mode acts as, so the situation carries it without anyone having to write the tag
-    // by hand. `roles` above answers a different question — who a *caller* is, for the write path —
-    // and the two are separate on purpose: one is a fact about this mode, the other a security
-    // decision that has to fail closed. A mode that wants both states both.
-    const roleTag = statedRole === undefined || statedRole.length === 0 ? [] : [`role:${statedRole}`]
+    // Every tag comes from what the deployment declared or from what an object's state says. Nothing
+    // is inferred from who the caller is: `roles` above answers that question for the write path, and
+    // the two are separate on purpose — one selects the rules an agent must follow and is a fact about
+    // the deployment, the other is a security decision that has to fail closed.
     const selection = selectRules(
       graph,
       {
         deliverables: resolved.deliverables,
-        tags: [...new Set([...declared, ...roleTag, ...resolved.tags])],
+        tags: [...new Set([...declared, ...resolved.tags])],
         ...(resolved.because === undefined ? {} : { because: resolved.because }),
         ...(resolved.note === undefined ? {} : { trouble: resolved.note }),
       },

@@ -1,6 +1,6 @@
 {
   "name": "@zhangcun123/role",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "The role a mode acts as, and the prompt it works under — a composition plugin for DeepWork.",
   "license": "MIT",
   "type": "module",

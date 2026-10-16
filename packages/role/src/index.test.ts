@@ -26,8 +26,6 @@ const PERSONA_ORDER = 10
 interface Harness {
   ctx: RoleContext
   logs: string[]
-  /** What the plugin published, if it published anything. */
-  published: unknown
   /** Every prompt section the plugin registered, as evaluated at registration. */
   sections: Map<string, string>
   /** How each section was registered, which is the only place its rank and its flag are visible. */
@@ -42,7 +40,6 @@ interface Harness {
 function harness(): Harness {
   const state: Harness = {
     logs: [],
-    published: undefined,
     sections: new Map(),
     registrations: new Map(),
     providers: new Map(),
@@ -52,10 +49,6 @@ function harness(): Harness {
   state.ctx = {
     logger: {
       warn: (message: string) => state.logs.push(message),
-    },
-    provide: (name, value) => {
-      if (name === 'deepworkRole') state.published = value
-      return () => {}
     },
     inject: (names, callback) => {
       // Only the prompt registry is stood up, and only when the plugin asks for it. Everything else
@@ -133,8 +126,7 @@ test('a prompt naming another role is not the one mounted', (t) => {
 
 test('a prompt file that is not there is reported, and the mode still comes up', (t) => {
   // Refusing to boot over a missing prompt would take the tools down with it, and a prompt is the
-  // one part of a mode whose absence degrades manner rather than capability. The role is still
-  // stated, because the rules selected by it do not depend on the file being readable.
+  // one part of a mode whose absence degrades manner rather than capability.
   // A scratch directory, so the file is absent by construction rather than by a path that happens
   // not to exist on this machine.
   const dir = mkdtempSync(join(tmpdir(), 'deepwork-role-'))
@@ -142,7 +134,6 @@ test('a prompt file that is not there is reported, and the mode still comes up',
   const h = mount({ role: 'curator', prompts: { curator: join(dir, 'absent.txt') } })
 
   assert.equal(h.sections.has('deepwork:role-prompt'), false)
-  assert.deepEqual(h.published, { role: 'curator' })
   assert.ok(
     h.logs.some((line) => line.includes('could not be read') && line.includes('curator')),
     'and it says which role and which file',
@@ -163,11 +154,8 @@ test('a role with no prompt entry, and an empty prompt, are both said out loud',
   assert.ok(blank.logs.some((line) => line.includes('is empty')))
 })
 
-test('the role it acts as is published, so the situation can carry it', () => {
-  const stated = mount({ role: 'curator' })
-  assert.deepEqual(stated.published, { role: 'curator' })
-
+test('a mount that states no role mounts nothing, and says which', () => {
   const silent = mount({})
-  assert.equal(silent.published, undefined, 'a mount that states no role has nothing to say')
   assert.equal(silent.sections.size, 0)
+  assert.ok(silent.logs.some((line) => line.includes('no role configured')))
 })

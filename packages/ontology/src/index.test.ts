@@ -29,19 +29,6 @@ function scratchFixture(): string {
   return dir
 }
 
-/** What the harness stands up beside the plugin. */
-interface HarnessOptions {
-  /** The role the role plugin published, if one is mounted and it states one. */
-  role?: string
-  /**
-   * Hold the role back until {@link Harness.stateRole} is called.
-   *
-   * The two packages are separate mounts, so a service that appears after this plugin loaded is the
-   * ordinary case rather than a corner, and this is how the harness produces it.
-   */
-  lateRole?: boolean
-}
-
 interface Harness {
   /** The scratch domain this harness mounted, so tests can resolve paths inside it. */
   root: string
@@ -57,15 +44,10 @@ interface Harness {
   interpolate: Map<string, boolean | undefined>
   /** Evaluate a section again, which is what the registry does for each assembly. */
   readSection(name: string): string
-  /** Hand the role service over now, as a plugin loading after this one would. */
-  stateRole(role: string): void
 }
 
 /** A context that records what the plugin does, without a runtime or a domain on disk. */
-function harness(options: HarnessOptions = {}): Harness {
-  // The role plugin's channel, as this plugin sees it: a callback to be called when the service
-  // exists, which may be later than the call that registered it.
-  let deliver: ((scoped: never) => void) | undefined
+function harness(): Harness {
   const state: Harness = {
     root: '',
     registered: [],
@@ -74,7 +56,6 @@ function harness(options: HarnessOptions = {}): Harness {
     providers: new Map(),
     interpolate: new Map(),
     readSection: (name) => state.providers.get(name)?.() ?? '',
-    stateRole: (role) => deliver?.({ deepworkRole: { role } } as never),
     ctx: undefined as unknown as OntologyContext,
   }
   state.ctx = {
@@ -92,17 +73,8 @@ function harness(options: HarnessOptions = {}): Harness {
       info: (message: string) => state.logs.push(`info: ${message}`),
     },
     inject: (names, callback) => {
-      // Two services are stood up. Everything else the plugin asks for is absent, and the plugin has
+      // One service is stood up. Everything else the plugin asks for is absent, and the plugin has
       // to work without it — which is exactly what leaving the others empty tests.
-      if (names.includes('deepworkRole')) {
-        if (options.lateRole === true) {
-          deliver = callback
-          return
-        }
-        if (options.role === undefined) return
-        callback({ deepworkRole: { role: options.role } } as never)
-        return
-      }
       if (!names.includes('systemPrompt')) return
       callback({
         systemPrompt: {
@@ -187,11 +159,11 @@ const LESSONS = resolve(fileURLToPath(import.meta.url), '../../examples/lessons'
 /**
  * Mount the lessons example, which is the smallest domain that vouches for anything.
  *
- * The role the deployment acts as is the role plugin's to state, so it is supplied through the
- * service channel rather than as configuration here.
+ * The situation is configuration here, and the role is part of it: a deployment states the role it
+ * acts as where the plugin that selects rules by it is mounted.
  */
-function mountLessons(situation: string, options: HarnessOptions = {}): Harness {
-  const h = harness(options)
+function mountLessons(situation: string): Harness {
+  const h = harness()
   h.root = mkdtempSync(join(tmpdir(), 'deepwork-index-lessons-'))
   cpSync(LESSONS, h.root, { recursive: true })
   apply(h.ctx, {
@@ -278,28 +250,15 @@ test('the section is recomputed for each assembly, so a promotion arrives withou
   assert.notEqual(after, before, 'the two reads are genuinely different text')
 })
 
-test('the role the mode acts as reaches the situation without anyone typing the tag', () => {
-  // The role was a tag somebody had to remember, or an id-prefix map for the write path. It arrives
-  // from the plugin whose job it is now, and lands in the thing it actually describes: which rules
-  // this agent is here to follow.
-  const withRole = mountLessons('', { role: 'curator' })
-  assert.match(withRole.readSection('deepwork:experience'), /role:curator/)
+test('the role a deployment states reaches the situation, because nothing derived can supply it', () => {
+  // The role is the one tag no object state can produce: a case says what stage it reached, and
+  // nothing in the domain says who is doing the work. So the deployment states it, and it lands in
+  // the thing it describes — which rules this agent is here to follow.
+  const stated = mountLessons('role:curator')
+  assert.match(stated.readSection('deepwork:experience'), /role:curator/)
 
-  const without = mountLessons('')
-  assert.doesNotMatch(without.readSection('deepwork:experience'), /role:/)
-})
-
-test('a role published after this plugin loaded still reaches the situation', () => {
-  // The two packages are separate mounts, so which of them loads first is the composition's
-  // business. Reading the role per assembly, rather than resolving it once at load, is what makes
-  // that order not matter.
-  const h = mountLessons('', { lateRole: true })
-
-  assert.doesNotMatch(h.readSection('deepwork:experience'), /role:curator/)
-
-  h.stateRole('curator')
-
-  assert.match(h.readSection('deepwork:experience'), /role:curator/)
+  const silent = mountLessons('')
+  assert.doesNotMatch(silent.readSection('deepwork:experience'), /role:/)
 })
 
 test('the rules block asks not to be interpolated', () => {

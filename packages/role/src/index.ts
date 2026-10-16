@@ -5,6 +5,16 @@
  * a mount that costs nothing and duplicates nothing is what lets a mode state who its agents are
  * without a second mount of anything else.
  *
+ * It states that role to the reader of a prompt and to nobody else. It used to publish it as a
+ * service the ontology could select rules by, and that channel was deleted rather than repaired: a
+ * preset's rows are mounted in the preset's own realm, so a row that publishes a service publishes
+ * into that realm, and the ontology is mounted by the profile, outside it. A host-plane consumer
+ * never receives it. Worse, a preset row that publishes into the ROOT realm has its whole preset
+ * rejected ("Preset services require isolate realms") — which the interface renders as a mode that is
+ * simply absent, with nothing written to any log. Which role a deployment acts as is stated where the
+ * ontology is mounted, as the `situation` tag the domain selects rules by; a mode states it here only
+ * to pick the prompt its own agents work under.
+ *
  * @module @zhangcun123/role
  */
 
@@ -14,23 +24,28 @@ import { readFileSync } from 'node:fs'
 export const name = 'deepwork-role'
 
 /**
- * The service name the role is published under.
+ * The services this plugin requires before it starts, declared the way the loader reads them.
  *
- * A bare string rather than an imported symbol, because the two sides do not depend on each other:
- * this plugin may be mounted with no ontology at all, and the ontology may load with no role stated.
- * Where they meet is a name both sides state.
+ * The prompt registry is the one thing this row cannot do its work without, and
+ * `@deepseek-ai/dsh-persona` declares exactly this one while being mounted in the same list by every
+ * preset — which is the evidence that a row inside a preset resolves it. Our own `test-runner`
+ * declares `['tools']` for the same reason.
+ *
+ * Declaring it is the honest of the two options. An undeclared requirement still comes up and mounts
+ * no section, so the agent silently loses its prompt; a declared one the composition does not supply
+ * is reported as an unusable row, which takes the mode out of the picker — a real failure, though one
+ * the registry reports nowhere but the picker itself. Either way the answer is a composition that
+ * supplies `systemPrompt`, and this says so in the file rather than in a comment.
  */
-const ROLE_SERVICE = 'deepworkRole'
+export const inject = ['systemPrompt']
 
 /** Plugin configuration, taken from the composition that mounts this plugin. */
 export interface Config {
   /**
    * The role this mount acts as, when the composition states one.
    *
-   * It does two things that turn out to be one thing. It selects which prompt below is mounted, and
-   * it is published so the ontology can put a `role:` tag in the situation — a mode says who its
-   * agents are once, and both the prompt they work under and the rules they must follow answer to
-   * it. Left unset, nothing changes: no prompt is mounted and no role is stated.
+   * It selects which prompt below is mounted, and nothing else. Left unset, nothing changes: no
+   * prompt is mounted and the mode acts as no stated role.
    *
    * Deliberately **not** a deployment's role map, which answers "who is this caller" for the write
    * path. That one has to fail closed and is a security decision; this one is a fact about how a mode
@@ -61,20 +76,9 @@ export interface RoleContext {
   /**
    * Run `callback` once a context carrying the named services exists, or never if it never does.
    * Optional, and deliberately so: a profile may have no prompt registry, and this plugin must still
-   * publish its role in one that has none.
+   * come up in one that has none.
    */
   inject?<Service>(names: readonly string[], callback: (scoped: Service) => void): void
-  /**
-   * Publish a value under a name other plugins can look up.
-   *
-   * The other half of {@link inject}, and the reason the ontology can select rules by a role this
-   * package declared: the name is stated by both sides and the caller is whoever injects it.
-   *
-   * @param name - Service name to publish under.
-   * @param value - The service value.
-   * @returns the exact disposer that withdraws it.
-   */
-  provide?(name: string, value: unknown): () => void
 }
 
 /** The prompt registry a profile provides, when it has one. */
@@ -115,19 +119,8 @@ function warn(ctx: RoleContext, message: string): void {
 export function apply(ctx: RoleContext, config: Config = {}): void {
   const role = config.role ?? ''
   if (role.length === 0) {
-    warn(ctx, 'no role configured; no prompt is mounted and no role is stated for the situation')
+    warn(ctx, 'no role configured; no prompt is mounted')
     return
-  }
-
-  // Published before the prompt is read, because the two answers are independent. A mode whose
-  // prompt file is missing is still a mode that acts as this role, and the rules it must follow are
-  // selected on that — so the role is stated even when there is nothing to mount.
-  if (ctx.provide?.(ROLE_SERVICE, { role }) === undefined) {
-    warn(
-      ctx,
-      'the runtime exposes no way to publish a service, so this role does not reach the situation ' +
-        'and no rule can be selected by it',
-    )
   }
 
   const promptFile = config.prompts?.[role]
@@ -135,7 +128,7 @@ export function apply(ctx: RoleContext, config: Config = {}): void {
     warn(
       ctx,
       `this mount acts as role "${role}" and declares no prompts entry for it, so no prompt ` +
-        'is mounted — the situation still carries the role',
+        'is mounted',
     )
     return
   }
