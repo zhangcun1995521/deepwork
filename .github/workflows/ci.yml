@@ -17,12 +17,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Pinned to the lockfile's own format (lockfileVersion 9.0). `--frozen-lockfile` refuses to
-      # migrate it, so a pnpm that writes a newer format would fail at the install rather than at the
-      # tests, which would be a confusing way to learn that the tooling moved.
+      # Pinned to the version that wrote the lockfile, and the reason is not cosmetic: this
+      # workspace's `overrides` live in `pnpm-workspace.yaml`, which pnpm 9 does not read. Under an
+      # older pnpm the override set comes out empty, `--frozen-lockfile` sees a lockfile whose
+      # recorded overrides do not match, and the install fails with a configuration mismatch — a
+      # confusing way to learn that the tooling moved.
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 11.7.0
 
       - uses: actions/setup-node@v4
         with:
