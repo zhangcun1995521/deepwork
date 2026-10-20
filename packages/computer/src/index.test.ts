@@ -332,6 +332,12 @@ const GATED: readonly (readonly [string, Record<string, unknown>, RegExp])[] = [
 
 const ONLY_WINDOWS = { skip: process.platform !== 'win32' ? 'Windows-only capability' : false }
 
+/** The sentence inside a refusal — which is an error result now, so it has to be unwrapped. */
+function errorText(result: { text?: string | undefined; error?: unknown }): string {
+  if (result.text !== undefined) return result.text
+  return result.error instanceof Error ? result.error.message : String(result.error)
+}
+
 /** A stand-in for the host's approval service: it records what it was asked and answers as told. */
 function fakeApproval(answer: ApprovalOutcome | Error): {
   surface: ApprovalSurface
@@ -424,8 +430,11 @@ test('a granted approval really runs the script, and a refused one does not', ON
   const shut = harness({ approval: denied.surface })
   apply(shut.ctx)
   const stopped = await attempt(shut.tools.find((t) => t.name === 'click'), CLICK_ARGS)
-  assert.match(stopped.text ?? '', /NOT APPROVED \(rejected\)/)
-  assert.doesNotMatch(stopped.text ?? '', /REFUSED \(/)
+  // A refusal is an error result, not a successful one: the log is the governance trail, and a
+  // refused act recorded as a completed tool call is the wrong fact in the wrong place. The words
+  // are unchanged — they still say what happened and that it was a decision.
+  assert.match(errorText(stopped), /NOT APPROVED \(rejected\)/)
+  assert.doesNotMatch(errorText(stopped), /REFUSED \(/)
 })
 
 test('a refusal, a withdrawal, and an answerer that is not there read as three different things', async () => {
@@ -437,12 +446,14 @@ test('a refusal, a withdrawal, and an answerer that is not there read as three d
     apply(h.ctx)
     const result = await attempt(h.tools.find((t) => t.name === 'click'), CLICK_ARGS)
 
-    // Text and not an exception: the model has to read the refusal and explain it to the user.
-    assert.equal(result.error, undefined, `${outcome} must be answered with a sentence`)
-    assert.match(result.text ?? '', new RegExp(`NOT APPROVED \\(${outcome}\\)`))
+    // An error result whose text is a decision rather than a fault: the sentence still says what
+    // happened and that nothing ran. The carrier is what keeps the session log from recording a
+    // refused act as a completed tool call, which is the wrong fact in a governance trail.
+    const said = errorText(result)
+    assert.ok(said.includes(`NOT APPROVED (${outcome})`), `${outcome}: ${said}`)
     // And the act did not run, which is what "not approved" has to mean.
-    assert.doesNotMatch(result.text ?? '', /REFUSED \(|window-gone/)
-    texts.push(result.text ?? '')
+    assert.doesNotMatch(said, /REFUSED \(|window-gone/)
+    texts.push(said)
   }
 
   assert.equal(new Set(texts).size, 3, 'three endings are three different messages')
@@ -462,9 +473,8 @@ test('a verb that must be approved is refused when there is nothing to ask', asy
     apply(h.ctx)
     const result = await attempt(h.tools.find((t) => t.name === 'click'), CLICK_ARGS)
 
-    assert.equal(result.error, undefined)
-    assert.match(result.text ?? '', /NOT APPROVED \(no-approval-service\)/)
-    assert.doesNotMatch(result.text ?? '', /REFUSED \(/)
+    assert.match(errorText(result), /NOT APPROVED \(no-approval-service\)/)
+    assert.doesNotMatch(errorText(result), /REFUSED \(/)
   }
 })
 
@@ -476,9 +486,10 @@ test('an ask that throws is a refusal, not a crash the model would read as a bro
   apply(h.ctx)
   const result = await attempt(h.tools.find((t) => t.name === 'click'), CLICK_ARGS)
 
-  assert.equal(result.error, undefined, 'a throwing ask must not become a throwing tool')
-  assert.match(result.text ?? '', /NOT APPROVED \(ask-failed\)/)
-  assert.match(result.text ?? '', /outside an open turn/)
+  // A throwing *ask* must not read as a broken *tool*: the message says the question could not be
+  // asked, which is a refusal, and it is delivered as an error like every other refusal here.
+  assert.match(errorText(result), /NOT APPROVED \(ask-failed\)/)
+  assert.match(errorText(result), /outside an open turn/)
 })
 
 test('a deployment that switches the gate off is never asked', async () => {

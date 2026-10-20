@@ -629,7 +629,7 @@ export function apply(ctx: ComputerContext, config: Config = {}): void {
     verb: Verb,
     exec: ExecutionContext,
     reason: string,
-  ): Promise<{ text: string } | undefined> => {
+  ): Promise<string | undefined> => {
     if (!requireApproval) return undefined
     // Looking is not acting, and there is nothing to ask about a read that ran none of this.
     if (!ACTING_VERB_NAMES.has(verb)) return undefined
@@ -637,14 +637,12 @@ export function apply(ctx: ComputerContext, config: Config = {}): void {
     if (who !== undefined && open.has(who)) return undefined
     const approval = ctx.get?.<ApprovalSurface>(APPROVAL_SERVICE)
     if (approval === undefined) {
-      return {
-        text: notApproved(
-          verb,
-          'no-approval-service',
-          'This runtime has nothing mounted that can ask, and an act nobody can approve is not one ' +
-            'this plugin performs.',
-        ),
-      }
+      return notApproved(
+        verb,
+        'no-approval-service',
+        'This runtime has nothing mounted that can ask, and an act nobody can approve is not one ' +
+          'this plugin performs.',
+      )
     }
     // The question the person answers, and the only place the scope is stated. It carries the act
     // that prompted it so the answer is a decision about something rather than about a verb, and it
@@ -666,13 +664,11 @@ export function apply(ctx: ComputerContext, config: Config = {}): void {
       // Throwing is not the same as refusing, and it reads differently: the host throws when the
       // question has nowhere to go (no open turn, no session), which is a reason to not act rather
       // than a fault in the act.
-      return {
-        text: notApproved(
-          verb,
-          'ask-failed',
-          `The question could not be asked: ${error instanceof Error ? error.message : String(error)}`,
-        ),
-      }
+      return notApproved(
+        verb,
+        'ask-failed',
+        `The question could not be asked: ${error instanceof Error ? error.message : String(error)}`,
+      )
     }
     if (outcome === 'allowed-once') {
       if (who === undefined) return undefined
@@ -683,7 +679,7 @@ export function apply(ctx: ComputerContext, config: Config = {}): void {
       ctx.logger?.info?.(`computer: desktop operation approved for this session — windows: ${scope}`)
       return undefined
     }
-    return { text: notApproved(verb, outcome, REFUSAL_DETAIL[outcome]) }
+    return notApproved(verb, outcome, REFUSAL_DETAIL[outcome])
   }
 
   ctx.tools.register({
@@ -695,7 +691,7 @@ export function apply(ctx: ComputerContext, config: Config = {}): void {
     output: TEXT_OUTPUT,
     async execute(_args: unknown, exec: ExecutionContext): Promise<unknown> {
       const refused = await refuseUnlessApproved('list_windows', exec, 'list the windows on this desktop')
-      if (refused !== undefined) return refused
+      if (refused !== undefined) throw new Error(refused)
       const outcome = await runScript('list-windows.ps1')
       if (outcome.json === undefined) throw new Error(`list_windows: ${outcome.missing ?? 'no result'}`)
       return { text: describeWindows(outcome.json as WindowList) }
@@ -727,7 +723,7 @@ export function apply(ctx: ComputerContext, config: Config = {}): void {
         exec,
         `read the elements of window ${args.handle}`,
       )
-      if (refused !== undefined) return refused
+      if (refused !== undefined) throw new Error(refused)
       const maxNodes = args.maxNodes ?? 400
       const outcome = await runScript('get-window-state.ps1', [args.handle, maxNodes])
       if (outcome.json === undefined) throw new Error(`get_window_state: ${outcome.missing ?? 'no result'}`)
@@ -762,7 +758,7 @@ export function apply(ctx: ComputerContext, config: Config = {}): void {
         exec,
         `click element ${args.index} (${args.control} "${args.name}") in window ${args.handle}`,
       )
-      if (refused !== undefined) return refused
+      if (refused !== undefined) throw new Error(refused)
       const payload = {
         expect: { control: args.control, name: args.name },
         ...allowList,
@@ -805,7 +801,7 @@ export function apply(ctx: ComputerContext, config: Config = {}): void {
         exec,
         `click at screen point ${args.x},${args.y} in window ${args.handle}${args.double === true ? ', twice' : ''}`,
       )
-      if (refused !== undefined) return refused
+      if (refused !== undefined) throw new Error(refused)
       const payload = {
         x: args.x,
         y: args.y,
@@ -856,7 +852,7 @@ export function apply(ctx: ComputerContext, config: Config = {}): void {
         `type ${args.text.length} character(s) into element ${args.index} ` +
           `(${args.control} "${args.name}") in window ${args.handle}`,
       )
-      if (refused !== undefined) return refused
+      if (refused !== undefined) throw new Error(refused)
       const payload = {
         expect: { control: args.control, name: args.name },
         text: args.text,
@@ -892,7 +888,7 @@ export function apply(ctx: ComputerContext, config: Config = {}): void {
         exec,
         `press "${args.key}" in window ${args.handle}`,
       )
-      if (refused !== undefined) return refused
+      if (refused !== undefined) throw new Error(refused)
       const payload = { key: args.key, ...allowList }
       const outcome = await runScript('invoke.ps1', ['press_key', args.handle, -1], payload)
       if (outcome.json === undefined) throw new Error(`press_key: ${outcome.missing ?? 'no result'}`)
@@ -926,7 +922,7 @@ export function apply(ctx: ComputerContext, config: Config = {}): void {
         exec,
         `capture window ${args.handle}${args.index === undefined ? '' : `, element ${args.index}`}`,
       )
-      if (refused !== undefined) return refused
+      if (refused !== undefined) throw new Error(refused)
       const imagePath = capturePath()
       const payload = { imagePath, ...allowList }
       const outcome = await runScript('invoke.ps1', ['screenshot', args.handle, args.index ?? -1], payload)
