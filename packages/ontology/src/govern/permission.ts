@@ -20,7 +20,8 @@
  * @module @zhangcun123/ontology/govern/permission
  */
 
-import { isAbsolute, relative, resolve } from 'node:path'
+import { realpathSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 import type { ObjectTypeDecl } from '../engine/schema.ts'
 
@@ -41,6 +42,9 @@ export type DenialReason =
   | 'role-not-permitted'
   | 'missing-required-field'
   | 'path-outside-declared-directory'
+  // The same refusal, arrived at differently: the path is inside the declared directory as a string
+  // and outside it as a filesystem, which is what a junction or a symlink buys.
+  | 'path-escapes-through-a-link'
   // Value refusals: a field declared a closed set of choices and the write stepped outside it.
   | 'value-not-declared'
   // Lifecycle refusals live in their own module; they surface through the same write
@@ -131,6 +135,35 @@ const RESERVED_NAMES = new Set([
 
 /** Longest id this predicate accepts, leaving room for a directory, a separator and `.yaml`. */
 const MAX_ID_LENGTH = 200
+
+
+/**
+ * The real path of `path`, or of its deepest existing ancestor with the rest appended.
+ *
+ * `realpathSync` needs the file to exist, and on a first write it does not: neither the file nor, in
+ * the ordinary case, its directory. Walking up to the nearest ancestor that does exist answers the
+ * question the caller is actually asking — "where would this land, once the parts that do not exist
+ * yet are created" — and it resolves the links on the way, which is the whole point.
+ *
+ * @param path - An absolute path that may or may not exist.
+ * @returns The path with every existing link resolved.
+ */
+function realPathOf(path: string): string {
+  const suffix: string[] = []
+  let current = path
+  while (true) {
+    try {
+      const real = realpathSync(current)
+      return suffix.length === 0 ? real : join(real, ...suffix.reverse())
+    } catch {
+      // Not there yet; its parent is the next question.
+    }
+    const parent = dirname(current)
+    if (parent === current) return path
+    suffix.push(basename(current))
+    current = parent
+  }
+}
 
 /**
  * True when an id can be used to build a filename without escaping anywhere.
@@ -251,6 +284,24 @@ function finish(
       allowed: false,
       reason: 'path-outside-declared-directory',
       detail: `${target} is outside ${base}`,
+    }
+  }
+
+  // The check above is lexical, and a link is the thing that makes a lexical check disagree with the
+  // filesystem: a junction created inside the declared directory pointing at `C:/Windows` is inside
+  // it as a string and outside it as a place. Resolving the *deepest existing ancestor* of each side
+  // answers the question the string cannot — the file itself need not exist yet, and neither does
+  // its immediate directory on the first write.
+  const realBase = realPathOf(base)
+  const realTarget = realPathOf(target)
+  const realWithin = relative(realBase, realTarget)
+  if (realWithin.length === 0 || realWithin.startsWith('..') || isAbsolute(realWithin)) {
+    return {
+      allowed: false,
+      reason: 'path-escapes-through-a-link',
+      detail:
+        `${target} resolves to ${realTarget}, outside ${realBase} — which is where a link inside the ` +
+        'declared directory can make a path land',
     }
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "@zhangcun123/computer",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Look at, and act on, this machine's desktop — a capability plugin for DeepWork.",
   "license": "MIT",
   "type": "module",

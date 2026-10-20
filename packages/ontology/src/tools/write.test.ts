@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict'
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import { loadGraph } from '../engine/graph.ts'
+import type { ObjectTypeDecl } from '../engine/schema.ts'
 import type { AuditEntry } from '../govern/audit.ts'
 import { PROVENANCE_FILE, readProvenance } from '../engine/provenance.ts'
-import { ANY_CALLER, isSafeId, roleOf, type RoleRule } from '../govern/permission.ts'
+import { ANY_CALLER, authoriseWrite, isSafeId, roleOf, type RoleRule } from '../govern/permission.ts'
 import type { DerivedToolSpec } from './derive.ts'
 import { deriveWriteTools } from './write.ts'
 
@@ -728,4 +729,47 @@ test('a counter bump does not become the author of the record it counted', () =>
     'curator-session-1',
     'writing the record is',
   )
+})
+test('a link in the middle of the path cannot carry a write out of the domain', (t) => {
+  // The containment check is lexical, and a link is what makes a lexical check disagree with the
+  // filesystem: a junction created inside the domain, pointing anywhere, is inside it as a string and
+  // outside it as a place. Resolving the deepest existing ancestor of each side answers the question
+  // the string cannot, and the file being written need not exist yet.
+  //
+  // Tested on `authoriseWrite` directly rather than through the tool, because the tool's target is
+  // always `<declared directory>/<id>.yaml` and an id cannot contain a separator — so today only a
+  // caller that builds the path itself could interpose a link. This is the unit that has to be right
+  // when one does.
+  const root = scratchDomain('lifecycle')
+  const outside = mkdtempSync(join(tmpdir(), 'deepwork-outside-'))
+  t.after(() => rmSync(outside, { recursive: true, force: true }))
+  const link = join(root, 'objects', 'linked')
+  symlinkSync(outside, link, 'junction')
+  t.after(() => rmSync(link, { force: true }))
+
+  const type = {
+    name: 'Thing',
+    primaryKey: 'thing_id',
+    primaryKeySource: 'declared',
+    requiredFields: [],
+    fields: {},
+    directory: 'objects',
+    fileLocation: 'objects/*.yaml',
+    writtenBy: ['curator'],
+    raw: {},
+  } as unknown as ObjectTypeDecl
+
+  const escaped = authoriseWrite(
+    type,
+    root,
+    join(root, 'objects', 'linked', 'THING-1.yaml'),
+    'curator-session-1',
+    CURATOR,
+  )
+  assert.equal(escaped.allowed, false)
+  assert.equal(escaped.allowed ? undefined : escaped.reason, 'path-escapes-through-a-link')
+
+  // And the ordinary path, one level inside the declared directory, still passes.
+  const ordinary = authoriseWrite(type, root, join(root, 'objects', 'THING-2.yaml'), 'curator-session-1', CURATOR)
+  assert.equal(ordinary.allowed, true)
 })
