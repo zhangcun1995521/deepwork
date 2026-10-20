@@ -270,3 +270,26 @@ test('the session workspace is read from the agent, and a non-agent caller has n
     'an agent without a workspace header has no workspace, rather than a default one',
   )
 })
+
+test('a composition with no prompt registry still gets the tool', () => {
+  // The plugin used to declare `systemPrompt` in its own `inject`, so a profile without a prompt
+  // registry lost the row entirely — the tool disappeared and nothing said why. A capability is a
+  // tool first; the section that advertises it is worth having, not worth the tool's absence.
+  const tools: RegisterableTool[] = []
+  const service: LspService = {
+    registerProvider: () => () => {},
+    async query() {
+      throw new Error('nothing is queried in this test')
+    },
+  }
+  registerLspTool(
+    { tools: { register: (definition) => tools.push(definition) } },
+    service,
+    { maxLocations: 5, maxResultChars: 1000, timeoutMs: 1000 },
+  )
+
+  assert.ok(
+    tools.some((tool) => tool.name === 'lsp'),
+    'the tool is registered with no prompt registry, and no section is attempted',
+  )
+})

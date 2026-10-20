@@ -53,10 +53,16 @@ export type { LspToolExecution, RegisterableTool } from './tool.ts'
 export const name = 'deepwork-lsp'
 
 /**
- * Declared so the loader holds this plugin until both surfaces exist: a tool registered before the
- * tool registry is up has nowhere to land, and the prompt section needs the prompt registry.
+ * Declared so the loader holds this plugin until the tool registry exists: a tool registered before
+ * it is up has nowhere to land.
+ *
+ * The prompt registry is deliberately **not** here. It used to be, and the cost was structural: a
+ * composition that mounts no prompt registry lost the whole plugin and its tool, silently — the row
+ * simply never activated. A capability is a tool first; the section that tells the model the tool
+ * exists is worth having and not worth the tool's absence. It is registered opportunistically
+ * instead, the way this repo treats every other optional surface.
  */
-export const inject = ['tools', 'systemPrompt']
+export const inject = ['tools']
 
 /** The service name a second language-server backend can register against. */
 export const LSP_SERVICE = 'lsp'

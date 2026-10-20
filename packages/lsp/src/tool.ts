@@ -90,7 +90,14 @@ export interface RegisterableTool {
 /** The slice of the runtime this tool contributes to. Structural, and so host-free. */
 export interface LspToolContext {
   tools: { register(definition: RegisterableTool): unknown }
-  systemPrompt: { section(section: { name: string; order: number; text: string }): unknown }
+  /**
+   * The prompt registry, when the composition has one.
+   *
+   * Optional on purpose: the tool works without it and the section is an advertisement. A host
+   * without one gets a working `lsp` tool whose existence the model is not told about, which is a
+   * degradation of manner rather than of capability.
+   */
+  systemPrompt?: { section(section: { name: string; order: number; text: string }): unknown }
 }
 
 /** The tool's own settings, taken from the composition that mounts this plugin. */
@@ -220,7 +227,7 @@ export function registerLspTool(ctx: LspToolContext, lsp: LspService, config: Ls
   assertPositiveInteger('maxResultChars', maxResultChars)
   assertTimer('timeoutMs', timeoutMs)
 
-  ctx.systemPrompt.section({ name: LSP_PROMPT_SECTION, order: LSP_PROMPT_ORDER, text: LSP_PROMPT_TEXT })
+  ctx.systemPrompt?.section({ name: LSP_PROMPT_SECTION, order: LSP_PROMPT_ORDER, text: LSP_PROMPT_TEXT })
 
   ctx.tools.register({
     name: 'lsp',

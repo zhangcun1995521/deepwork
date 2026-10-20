@@ -83,6 +83,15 @@ export interface ExecutionContext {
     session?: { requestHeader?(): { config?: { provider?: string; model?: string } } }
     options?: { provider?: string; model?: string }
   }
+  /**
+   * The tool call this execution belongs to, when the host names one.
+   *
+   * Passed straight on to the approval question. The host appends `approval/asked` and
+   * `approval/decided` to the session log and uses this id to tie that pair to the call the
+   * interface already rendered; without it the trail records that somebody was asked about
+   * something, and cannot say which call the answer was about.
+   */
+  callId?: string
   signal?: unknown
 }
 
@@ -162,6 +171,8 @@ export interface ApprovalSurface {
   request(request: {
     agent: unknown
     toolName: string
+    /** The call being approved; the host uses it to tie the ask/decide pair to one tool call. */
+    callId?: string
     reason?: string
     signal?: unknown
   }): Promise<ApprovalOutcome>
@@ -642,6 +653,7 @@ export function apply(ctx: ComputerContext, config: Config = {}): void {
     const request = {
       agent: exec.agent,
       toolName: verb,
+      ...(exec.callId === undefined ? {} : { callId: exec.callId }),
       reason:
         `Allow this agent to operate the desktop for this session — windows: ${scope}. ` +
         `First act: ${reason}. Every later act in this session runs without asking again.`,
