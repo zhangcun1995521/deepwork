@@ -20,8 +20,8 @@
  * @module @zhangcun123/ontology/tools/write
  */
 
-import { existsSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
 import { dump as dumpYaml } from 'js-yaml'
 
@@ -374,14 +374,46 @@ export function writeEntity(
         )
       }
 
-      writeFileSync(file, dumpYaml(merged, { lineWidth: 120, noRefs: true }))
+      // Written beside the target and moved into place, and the directory is created first.
+      //
+      // Two failures this closes. A type whose declared directory does not exist yet — the ordinary
+      // case for a declaration written before its first instance, which the graph loader reports as
+      // a harmless note — used to throw a raw ENOENT out of `writeFileSync`: no audit line, no
+      // provenance, nothing to read. And truncate-then-write destroys the previous version when it
+      // fails halfway, so a full disk or a killed process left an entity file empty.
+      //
+      // `renameSync` replaces the destination on every platform Node supports, so the move is the
+      // commit point: before it the old file is untouched, after it the new one is complete.
+      const temporary = `${file}.writing-${process.pid}-${Date.now()}`
+      try {
+        mkdirSync(dirname(file), { recursive: true })
+        writeFileSync(temporary, dumpYaml(merged, { lineWidth: 120, noRefs: true }))
+        renameSync(temporary, file)
+      } catch (error) {
+        rmSync(temporary, { force: true })
+        deny(
+          'write-failed',
+          `"${typeName}:${id}" could not be written to ${file}: ` +
+            `${error instanceof Error ? error.message : String(error)}. The previous version, if ` +
+            'there was one, is untouched.',
+        )
+      }
       // Recorded before the refresh, so a later read in the same process sees it.
-      appendProvenance(join(graph.root, PROVENANCE_FILE), {
-        at: now().toISOString(),
-        type: typeName,
-        id,
-        ...(call?.agentId === undefined ? {} : { agentId: call.agentId }),
-      })
+      //
+      // Only a content write records a producer. Provenance answers "who authored this", and the
+      // review check reads it to refuse a verdict written by the person who produced the thing — so
+      // a counter bump or a state move recording its caller would make the *next* writer the author
+      // of somebody else's work, and would let the author review their own record again after a
+      // colleague touched a number on it. Those two cases are recognised above, as `counterOnly` and
+      // `transitionOnly`, and the schema already keeps authorship apart from them.
+      if (!counterOnly && !transitionOnly) {
+        appendProvenance(join(graph.root, PROVENANCE_FILE), {
+          at: now().toISOString(),
+          type: typeName,
+          id,
+          ...(call?.agentId === undefined ? {} : { agentId: call.agentId }),
+        })
+      }
       refreshGraph(graph)
 
       options.audit({

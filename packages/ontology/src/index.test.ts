@@ -44,6 +44,8 @@ interface Harness {
   interpolate: Map<string, boolean | undefined>
   /** Evaluate a section again, which is what the registry does for each assembly. */
   readSection(name: string): string
+  /** What the plugin published for other packages to look up, by service name. */
+  published: Map<string, unknown>
 }
 
 /** A context that records what the plugin does, without a runtime or a domain on disk. */
@@ -55,6 +57,7 @@ function harness(): Harness {
     sections: new Map(),
     providers: new Map(),
     interpolate: new Map(),
+    published: new Map(),
     readSection: (name) => state.providers.get(name)?.() ?? '',
     ctx: undefined as unknown as OntologyContext,
   }
@@ -67,6 +70,10 @@ function harness(): Harness {
       guard(guard: (call: RuntimeToolCall) => string | undefined): void {
         state.mounted = guard
       },
+    },
+    provide: (name: string, value: unknown) => {
+      state.published.set(name, value)
+      return () => state.published.delete(name)
     },
     logger: {
       warn: (message: string) => state.logs.push(`warn: ${message}`),
@@ -286,4 +293,43 @@ test('a domain edited into an unreadable state mid-session is said, not silently
   const after = h.readSection('deepwork:experience')
   assert.match(after, /no longer reads cleanly/, 'the block reports what it could not read')
   assert.match(after, /LES-001/, 'and names the file, so a reader can go and look')
+})
+
+test('the governance channel is published, and the ontology does not declare its own tools to it', () => {
+  // `external` and `test-runner` ask the runtime for `deepworkGovernance` and declare what their
+  // tools touch; nothing until now stood the channel up in this suite, so the seam every capability
+  // depends on was asserted by nothing — a renamed service would have been green.
+  const h = mountLessons('artifact:pull_request')
+
+  const registry = h.published.get('deepworkGovernance') as
+    | { declareTool(name: string, access: unknown): () => void; govern(name: string): unknown; declared(): string[] }
+    | undefined
+  assert.ok(registry !== undefined, 'the channel is published under the name both sides state')
+
+  // The domain's grants reach it, and a capability's declaration is judged through it.
+  registry.declareTool('run_suite', { executes: ['pytest'] })
+  assert.ok(registry.govern('run_suite') !== undefined)
+
+  // And the ontology's own tools are *not* declared: the guard has never heard of them, which is why
+  // an action named in `tool_grants` does nothing. That is documented in the architecture document,
+  // and this is the assertion that keeps the document honest.
+  assert.deepEqual(
+    registry.declared().filter((tool) => tool.startsWith('ontology_')),
+    [],
+    'the ontology does not declare its own tools, so tool_grants never applies to them',
+  )
+})
+
+test('a runtime with no service lookup is told what it therefore did not register', () => {
+  // `ctx.inject?.()` was right about the optionality and wrong about the silence: no panel route, no
+  // skill catalogue and no rules block, with a boot log that looked healthy.
+  const h = harness()
+  h.root = mkdtempSync(join(tmpdir(), 'deepwork-index-nolookup-'))
+  cpSync(LESSONS, h.root, { recursive: true })
+  delete (h.ctx as { inject?: unknown }).inject
+  apply(h.ctx, { ontologyRoot: h.root, situation: '', auditLog: join(h.root, 'audit.jsonl') })
+
+  const said = h.logs.join(String.fromCharCode(10))
+  assert.match(said, /exposes no service lookup/)
+  assert.match(said, /rules block/)
 })

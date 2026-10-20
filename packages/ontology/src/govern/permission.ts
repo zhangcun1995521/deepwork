@@ -50,6 +50,9 @@ export type DenialReason =
   | 'transition-not-permitted'
   // Counter refusals, for the same reason: one vocabulary a caller can branch on.
   | 'invalid-increment'
+  // The write itself failed — no directory could be created, or the file could not be moved into
+  // place. Distinct from every refusal above because nothing about the call was wrong: the disk was.
+  | 'write-failed'
   | 'not-a-counter'
   | 'increment-not-permitted'
   // Review refusals: a move that needed an independent verdict and did not get one.
@@ -111,17 +114,57 @@ export function roleOf(
 }
 
 /**
+ * Device names Windows reserves, with or without an extension.
+ *
+ * `NUL.yaml` is the null device exactly as `NUL` is: writing to it reports success and the bytes go
+ * nowhere, and `existsSync` afterwards can answer true. That is the worst failure this predicate
+ * guards: not a refused write, but a write that appears to have worked and left no record.
+ */
+const RESERVED_NAMES = new Set([
+  'CON',
+  'PRN',
+  'AUX',
+  'NUL',
+  ...Array.from({ length: 9 }, (_, index) => `COM${index + 1}`),
+  ...Array.from({ length: 9 }, (_, index) => `LPT${index + 1}`),
+])
+
+/** Longest id this predicate accepts, leaving room for a directory, a separator and `.yaml`. */
+const MAX_ID_LENGTH = 200
+
+/**
  * True when an id can be used to build a filename without escaping anywhere.
  *
  * The id comes from the model, so this is a real boundary rather than hygiene: an id
  * of `../../elsewhere` would otherwise place a file outside the domain entirely. The
  * path check below would still catch it, but rejecting the id says what actually went
  * wrong instead of reporting a confusing path complaint.
+ *
+ * The rules below are the ones a filesystem makes necessary rather than the ones a reader might
+ * guess, and each is here because the alternative is a silent success:
+ *
+ * - **path separators and NUL**, which would leave the declared directory;
+ * - **`:`**, which on NTFS opens an alternate data stream (`X.yaml::$DATA` is another file that is
+ *   not the one the domain reads) and elsewhere starts a drive or a scheme;
+ * - **control characters**, which no filename round-trip preserves;
+ * - **a trailing dot or space**, which Windows strips — `a.` and `a` would name the same file on one
+ *   platform and two on another, so the same domain would hold one instance or two depending on
+ *   where it was read;
+ * - **a reserved device name in any extension**, because `NUL.yaml` is the null device;
+ * - **a length past what a filename safely holds** once a directory, a separator and `.yaml` are
+ *   added.
+ *
+ * What it deliberately cannot decide: two ids that differ only by case name one file on Windows and
+ * two on Linux. That is a fact about a pair of instances, so it belongs to the loader that reads the
+ * directory, not to a predicate over one id.
  */
 export function isSafeId(id: string): boolean {
-  if (id.length === 0) return false
+  if (id.length === 0 || id.length > MAX_ID_LENGTH) return false
   if (id === '.' || id === '..') return false
-  return !/[\\/\0]/.test(id)
+  if (/[\\/:\u0000-\u001f\u007f]/.test(id)) return false
+  if (/[. ]$/.test(id)) return false
+  const stem = (id.split('.')[0] ?? '').toUpperCase()
+  return !RESERVED_NAMES.has(stem)
 }
 
 /**

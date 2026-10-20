@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 import { loadGraph } from '../engine/graph.ts'
 import type { AuditEntry } from '../govern/audit.ts'
+import { PROVENANCE_FILE, readProvenance } from '../engine/provenance.ts'
 import { ANY_CALLER, isSafeId, roleOf, type RoleRule } from '../govern/permission.ts'
 import type { DerivedToolSpec } from './derive.ts'
 import { deriveWriteTools } from './write.ts'
@@ -81,6 +82,32 @@ test('an id is safe only when it cannot become a path', () => {
   for (const id of ['', '.', '..', 'a/b', 'a\\b', '../../etc/passwd']) {
     assert.equal(isSafeId(id), false, id)
   }
+})
+
+test('an id a filesystem would quietly reinterpret is not safe either', () => {
+  // Each of these used to pass. The failure they share is the worst kind: not a refused write but
+  // one that appears to have worked. `NUL.yaml` is the null device, `X.yaml::$DATA` is a stream that
+  // is not the file the domain reads, and a trailing dot is stripped by Windows so two ids name one
+  // file there and two files elsewhere.
+  for (const id of [
+    'NUL',
+    'nul',
+    'NUL.yaml',
+    'con.txt',
+    'COM1',
+    'LPT9.yaml',
+    'a:b',
+    'X.yaml::$DATA',
+    'a\u0007b',
+    'trailing.',
+    'trailing ',
+    'x'.repeat(201),
+  ]) {
+    assert.equal(isSafeId(id), false, id)
+  }
+  // Still safe, and close to the line: a reserved name as a *stem* only.
+  assert.equal(isSafeId('CONSOLE-1'), true)
+  assert.equal(isSafeId('a.b.c'), true)
 })
 
 test('with no roles configured, every write is refused', () => {
@@ -639,5 +666,66 @@ test('a file that exists and did not load is reported as that, not as missing fi
         { agentId: 'analyst-session-1' },
       ),
     /unreadable-instance/,
+  )
+})
+
+test('the first write into a declared directory that does not exist yet succeeds', () => {
+  // The loader reports a declared-but-empty directory as a harmless note, because a declaration is
+  // written before its first instance — so the first write is the ordinary case, not an edge. It used
+  // to throw a raw ENOENT out of `writeFileSync`: no audit line, no file, nothing to read.
+  const root = scratchDomain('lifecycle')
+  rmSync(join(root, 'objects', 'patterns'), { recursive: true, force: true })
+
+  const graph = loadGraph(root)
+  const { entries } = collector()
+  const { tools } = deriveWriteTools(graph, {
+    audit: entries.push.bind(entries),
+    now: CLOCK,
+    roles: [...CURATOR],
+  })
+  writeTool(tools).execute(
+    {
+      type: 'Pattern',
+      id: 'PAT-NEW',
+      data: { status: 'candidate', claim: 'Written into a directory that did not exist.' },
+    },
+    { agentId: 'curator-session-1' },
+  )
+
+  assert.match(readFileSync(join(root, 'objects/patterns/PAT-NEW.yaml'), 'utf8'), /PAT-NEW/)
+  assert.equal(entries[0]?.outcome, 'allowed')
+})
+
+test('a counter bump does not become the author of the record it counted', () => {
+  // Provenance answers "who authored this", and the review check reads it to refuse a verdict from
+  // the person who produced the thing. Recording a counter's caller made the *next* writer the author
+  // of somebody else's work — and let the author review their own record again after a colleague
+  // touched a number on it.
+  const root = scratchDomain('lifecycle')
+  const graph = loadGraph(root)
+  const { tools } = deriveWriteTools(graph, {
+    audit: () => {},
+    now: CLOCK,
+    roles: [...CURATOR, ...EXECUTOR],
+  })
+
+  writeTool(tools).execute(
+    { type: 'Pattern', id: 'PAT-A', data: {}, increment: { hits: 1 } },
+    { agentId: 'exec-session-1' },
+  )
+  assert.equal(
+    readProvenance(join(root, PROVENANCE_FILE)).producers.get('Pattern:PAT-A'),
+    undefined,
+    'counting is not authoring',
+  )
+
+  writeTool(tools).execute(
+    { type: 'Pattern', id: 'PAT-A', data: { rule: 'A rule somebody actually wrote.' } },
+    { agentId: 'curator-session-1' },
+  )
+  assert.equal(
+    readProvenance(join(root, PROVENANCE_FILE)).producers.get('Pattern:PAT-A'),
+    'curator-session-1',
+    'writing the record is',
   )
 })
