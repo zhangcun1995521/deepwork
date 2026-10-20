@@ -1,0 +1,21 @@
+# A domain whose declarations cannot be read, one shape of malformation each.
+#
+# No instances beside it, deliberately: what is under test is the *parser's* promise — that every
+# degradation is a warning — and a directory of objects would only make the failure harder to read.
+#
+# Each line below is a shape that used to be swallowed. A field written as a string instead of a
+# mapping lost its `values`, and the write path's `value-not-declared` check then had nothing to
+# compare against, so an enumeration quietly stopped being enforced. `required_fields` and
+# `written_by` written as scalars became empty lists, which read exactly like a deliberate omission —
+# and an empty `required_fields` even produced a warning about the *wrong* thing. A `primary_key`
+# that was not a string fell through to the conventions below without a word.
+object_types:
+  Thing:
+    description: A type whose declaration is readable, and whose decisions are not.
+    primary_key: 42
+    required_fields: thing_id
+    written_by: author
+    file_location: objects/things/T-*.yaml
+    fields:
+      id: {type: string}
+      status: "enum"

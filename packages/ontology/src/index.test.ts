@@ -271,3 +271,19 @@ test('the rules block asks not to be interpolated', () => {
 
   assert.equal(h.interpolate.get('deepwork:experience'), false)
 })
+
+test('a domain edited into an unreadable state mid-session is said, not silently smaller', () => {
+  // The graph is re-read on every assembly, and its warnings have to travel with it. They were
+  // dropped here: a rule file broken after boot took its rule out of the block and the block said
+  // nothing, because `trouble` only carried the active object's note. What a reader needs told is
+  // exactly what the second read could not read — and this is the only place that read happens.
+  const h = mountLessons('artifact:pull_request')
+  assert.doesNotMatch(h.readSection('deepwork:experience'), /no longer reads cleanly/)
+
+  const broken = join(h.root, 'objects', 'lessons', 'LES-001.yaml')
+  writeFileSync(broken, '{{{{')
+
+  const after = h.readSection('deepwork:experience')
+  assert.match(after, /no longer reads cleanly/, 'the block reports what it could not read')
+  assert.match(after, /LES-001/, 'and names the file, so a reader can go and look')
+})

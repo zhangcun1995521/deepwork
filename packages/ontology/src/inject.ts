@@ -512,7 +512,7 @@ export function selectRules(
   let used = 0
   for (const { rule } of candidates) {
     const size = lineOf(rule).length + 1
-    if (ceiling !== undefined && used + size > ceiling) break
+    if (ceiling !== undefined && used + size > ceiling) continue
     kept.push(rule)
     used += size
   }

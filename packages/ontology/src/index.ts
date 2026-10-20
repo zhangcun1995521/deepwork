@@ -174,6 +174,34 @@ export interface WebSurface {
   effect(callback: () => (() => void) | void, label: string): void
 }
 
+
+/**
+ * Run a registration once the named services exist, or say that this runtime cannot offer them.
+ *
+ * Every registration below used to be `ctx.inject?.(…)`, which is correct about the optionality and
+ * wrong about the silence: a host with no `inject` at all produced no route, no skill catalogue and
+ * no rules block, and the boot log looked exactly like a healthy one. The absence of a seam is a
+ * fact about the composition; the absence of a *report* is a defect, because the thing that went
+ * missing is the one the agent is supposed to be unable to miss.
+ *
+ * @param ctx - The runtime context.
+ * @param names - Services the registration needs.
+ * @param what - What is not registered when they are absent, phrased as a noun.
+ * @param register - The registration, run with a context carrying those services.
+ */
+function whenAvailable<Service>(
+  ctx: OntologyContext,
+  names: readonly string[],
+  what: string,
+  register: (scoped: Service) => void,
+): void {
+  if (ctx.inject === undefined) {
+    warn(ctx, `this runtime exposes no service lookup, so ${what} is not registered`)
+    return
+  }
+  ctx.inject(names, register)
+}
+
 /** Report a problem on whichever channel is available. */
 function warn(ctx: OntologyContext, message: string): void {
   if (ctx.logger?.warn !== undefined) ctx.logger.warn(message)
@@ -320,7 +348,7 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
   // The panel's data, served over the same origin as the UI that reads it. Registered
   // lazily and optionally: only web-carrying profiles have a web server, and everything
   // above has to work identically without one.
-  ctx.inject?.(['webServer'], (web: WebSurface) => {
+  whenAvailable<WebSurface>(ctx, ['webServer'], 'the domain panel route', (web) => {
     web.effect(
       () =>
         web.webServer.register({
@@ -344,7 +372,7 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
   const { skills, notes: skillNotes } = experienceSkills(graph)
   for (const note of skillNotes) warn(ctx, note)
   if (skills.length > 0) {
-    ctx.inject?.(['skills'], (registry: SkillSurface) => {
+    whenAvailable<SkillSurface>(ctx, ['skills'], 'the experience skill catalogue', (registry) => {
       registry.effect?.(
         () => {
           const disposers = skills.map((skill) => registry.skills.register(skill))
@@ -382,6 +410,12 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
   // without a restart.
   const compute = (): { selection: Selection; trouble?: string } => {
     const graph = loadGraph(ontologyRoot)
+    // The graph is re-read per assembly, and its warnings have to travel with it. They used to be
+    // dropped here: a domain edited into an unreadable state mid-session lost rules and the block
+    // said nothing, because `trouble` only carried the active object's note. The rules a compilation
+    // step could not read are exactly what a reader needs told, and this is the only place the
+    // second read happens.
+    const reread = graph.warnings.length === 0 ? undefined : `the domain no longer reads cleanly: ${graph.warnings.join('; ')}`
     const resolved = resolveActive(graph, config.active ?? '')
     const declared = parseSituation(config.situation ?? '')
     // Every tag comes from what the deployment declared or from what an object's state says. Nothing
@@ -398,7 +432,12 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
       },
       config.budget === undefined ? {} : { budget: config.budget },
     )
-    return { selection, ...(resolved.note === undefined ? {} : { trouble: resolved.note }) }
+    const trouble = [reread, resolved.note].filter((part): part is string => part !== undefined).join(' — ')
+    if (trouble.length === 0) return { selection }
+    // Folded into the *selection*, not only returned beside it: the section's text is
+    // `renderSection(compute().selection)`, so a trouble returned alongside would be printed at boot
+    // and nowhere else — which is the half of the day an editor is not watching.
+    return { selection: { ...selection, trouble }, trouble }
   }
 
   const first = compute()
@@ -419,7 +458,7 @@ export function apply(ctx: OntologyContext, config: Config = {}): void {
   // A plugin that stayed silent when nothing matched would turn the loudest failure into the
   // quietest.
   if (first.selection.total > 0) {
-    ctx.inject?.(['systemPrompt'], (prompt: SystemPromptSurface) => {
+    whenAvailable<SystemPromptSurface>(ctx, ['systemPrompt'], 'the rules block', (prompt) => {
       prompt.effect?.(
         () =>
           prompt.systemPrompt.section({

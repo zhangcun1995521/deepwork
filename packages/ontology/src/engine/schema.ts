@@ -289,18 +289,77 @@ function isMapping(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+
+/**
+ * Read a declaration that must be a list of names, and say so when it is not.
+ *
+ * `asStringList` answers `undefined` for anything that is not an array, and every caller turned
+ * that into an empty list. An empty list is a meaningful answer — a type no role may write, a type
+ * with no required fields — so a scalar that was meant to be a list became the *same* answer as a
+ * deliberate omission, with nothing said. `required_fields: thing_id` is the case that shows why it
+ * matters: it emptied the list and then produced a warning about the missing declaration, which
+ * pointed at the wrong thing.
+ *
+ * @param value - The raw node.
+ * @param at - Diagnostic prefix naming what owns the declaration.
+ * @param key - The key as written, for the message.
+ * @param warnings - Collector for the declarations that could not be read.
+ * @returns The list, or `undefined` when the key is simply absent.
+ */
+function declaredList(
+  value: unknown,
+  at: string,
+  key: string,
+  warnings: string[],
+): string[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) {
+    warnings.push(
+      `${at}: "${key}" must be a list of names (${JSON.stringify(value)} was given); it is read as ` +
+        'empty, which is the same answer as declaring nothing',
+    )
+    return undefined
+  }
+  return value.map((entry) => String(entry))
+}
+
 /** Read `values` when it is a list, otherwise `undefined`. */
 function asStringList(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined
   return value.map((entry) => String(entry))
 }
 
-/** Read `fields` when it is a mapping of mappings, otherwise `{}`. */
-function asFieldMap(value: unknown): Record<string, FieldDecl> {
-  if (!isMapping(value)) return {}
+/**
+ * Read `fields` when it is a mapping of mappings, and refuse the entries that are not.
+ *
+ * The first version turned a non-mapping entry into `{}` — a field that exists and declares
+ * nothing. The cost was invisible and expensive: `status: "enum"` (a string where a mapping was
+ * meant) lost its `values`, so the write path's `value-not-declared` check had nothing to compare
+ * against and the enumeration silently stopped being enforced, with no warning anywhere. Dropping
+ * the entry instead makes the instance files that use that field warn about it, which is loud and
+ * points at the declaration that is actually wrong.
+ *
+ * @param value - The raw `fields` node.
+ * @param at - Diagnostic prefix naming the type or relation it belongs to.
+ * @param warnings - Collector for the declarations that could not be read.
+ * @returns The fields that could be read.
+ */
+function asFieldMap(value: unknown, at: string, warnings: string[]): Record<string, FieldDecl> {
+  if (value === undefined) return {}
+  if (!isMapping(value)) {
+    warnings.push(`${at}: "fields" must be a mapping of field declarations; none were read`)
+    return {}
+  }
   const fields: Record<string, FieldDecl> = {}
   for (const [name, decl] of Object.entries(value)) {
-    const field = isMapping(decl) ? (decl as FieldDecl) : {}
+    if (!isMapping(decl)) {
+      warnings.push(
+        `${at}: field "${name}" is not a mapping (${JSON.stringify(decl)}); the field is treated as ` +
+          'undeclared, so nothing it was meant to constrain is enforced',
+      )
+      continue
+    }
+    const field = decl as FieldDecl
     // Normalised so the write path reads one spelling, and so a field that is not a
     // counter has no increment rights to find by accident.
     const incrementBy = asStringList(field.increment_by)
@@ -326,6 +385,15 @@ function resolvePrimaryKey(
   const declared = decl.primary_key ?? decl.primaryKey
   if (typeof declared === 'string' && declared.length > 0) {
     return { primaryKey: declared, source: 'declared' }
+  }
+  if (declared !== undefined) {
+    // A `primary_key` that is not a non-empty string falls through to the conventions below, which
+    // is the right behaviour and a silent one: the type ends up identified by something other than
+    // what its author named, and every id in the domain follows.
+    warnings.push(
+      `object type "${typeName}": "primary_key" must be a non-empty string ` +
+        `(${JSON.stringify(declared)} was given), so the conventions below decide the primary key`,
+    )
   }
   const first = requiredFields[0]
   if (first !== undefined && first.length > 0) {
@@ -490,7 +558,7 @@ export function parseSchema(root: string): OntologySchema {
   if (rawObjectTypes !== undefined && !isMapping(rawObjectTypes)) {
     warnings.push('"object_types" must be a mapping; ignoring it entirely')
   }
-  for (const [name, declaration] of Object.entries(asFieldMap(rawObjectTypes))) {
+  for (const [name, declaration] of Object.entries(asFieldMap(rawObjectTypes, '"object_types"', warnings))) {
     if (!isMapping(declaration)) {
       warnings.push(`object type "${name}" is not a mapping; skipped`)
       continue
@@ -504,10 +572,10 @@ export function parseSchema(root: string): OntologySchema {
       warnings.push(`object type "${name}" declares no file_location; its instances cannot be loaded`)
     }
 
-    const requiredFields = asStringList(decl.required_fields) ?? []
+    const requiredFields = declaredList(decl.required_fields, `object type "${name}"`, 'required_fields', warnings) ?? []
     // Parsed once, so a malformed declaration warns once rather than once per use.
     const lifecycle = parseLifecycle(decl.lifecycle, name, warnings)
-    const fields = asFieldMap(decl.fields)
+    const fields = asFieldMap(decl.fields, `object type "${name}"`, warnings)
     const { primaryKey, source } = resolvePrimaryKey(name, decl, requiredFields, warnings)
     const skill = parseSkillDecl(decl.skill, name, fields, lifecycle?.defaultState, warnings)
 
@@ -523,7 +591,7 @@ export function parseSchema(root: string): OntologySchema {
       // deterministic regardless of the host platform, since the schema is
       // authored with forward slashes.
       directory: fileLocation.length > 0 ? posix.dirname(fileLocation) : '',
-      writtenBy: asStringList(decl.written_by) ?? [],
+      writtenBy: declaredList(decl.written_by, `object type "${name}"`, 'written_by', warnings) ?? [],
       // Undefined here is a real answer: the type has no lifecycle, so no state is
       // enforced and nothing pretends otherwise.
       ...(lifecycle === undefined ? {} : { lifecycle }),
@@ -537,7 +605,7 @@ export function parseSchema(root: string): OntologySchema {
   if (rawLinkTypes !== undefined && !isMapping(rawLinkTypes)) {
     warnings.push('"link_types" must be a mapping; ignoring it entirely')
   }
-  for (const [name, declaration] of Object.entries(asFieldMap(rawLinkTypes))) {
+  for (const [name, declaration] of Object.entries(asFieldMap(rawLinkTypes, '"link_types"', warnings))) {
     const decl = isMapping(declaration) ? declaration : {}
     const from = typeof decl.from === 'string' ? decl.from : ''
     const to = typeof decl.to === 'string' ? decl.to : ''
@@ -588,7 +656,7 @@ export function parseSchema(root: string): OntologySchema {
   if (rawActionTypes !== undefined && !isMapping(rawActionTypes)) {
     warnings.push('"action_types" must be a mapping; ignoring it entirely')
   }
-  for (const [name, declaration] of Object.entries(asFieldMap(rawActionTypes))) {
+  for (const [name, declaration] of Object.entries(asFieldMap(rawActionTypes, '"action_types"', warnings))) {
     if (!isMapping(declaration)) {
       warnings.push(`action "${name}" is not a mapping; skipped`)
       continue

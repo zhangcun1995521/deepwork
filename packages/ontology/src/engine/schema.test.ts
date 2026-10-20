@@ -113,3 +113,24 @@ test('every malformed declaration is a warning, not a failure', () => {
   // ...while one that can, but names an undeclared type, is kept and flagged.
   assert.equal(schema.linkTypes.has('unknown_target'), true)
 })
+
+test('a declaration that cannot be read is a warning, not an empty declaration', () => {
+  // The module header promises that every degradation is recorded. These four shapes were the
+  // counter-examples: each became an empty answer, and an empty answer is indistinguishable from a
+  // deliberate one — a field with no values, a type with no required fields, a role list nobody may
+  // write, a primary key the conventions decide. What made the field case expensive is that an empty
+  // `values` silently disabled the write path's `value-not-declared` check.
+  const schema = parseSchema(fixture('malformed'))
+  const warnings = schema.warnings.join('\n')
+
+  assert.match(warnings, /field "status" is not a mapping/)
+  assert.match(warnings, /"required_fields" must be a list of names/)
+  assert.match(warnings, /"written_by" must be a list of names/)
+  assert.match(warnings, /"primary_key" must be a non-empty string/)
+
+  // And the field is gone rather than present-and-empty: an instance that writes `status` now hears
+  // about an undeclared field, which points at the declaration that is actually wrong.
+  const fields = schema.objectTypes.get('Thing')?.fields ?? {}
+  assert.equal('status' in fields, false)
+  assert.equal('id' in fields, true, 'the readable field survives')
+})

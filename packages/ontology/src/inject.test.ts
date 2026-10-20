@@ -802,3 +802,50 @@ test('the numbers and the index the block states are read back out of it, not as
   check(renderSection(selectRules(loadGraph(withAnotherRole()), situation)), 1)
   check(renderSection(selectRules(loadGraph(roleAndProductRules(t)), situation)), 0)
 })
+test('a rule too large for the budget does not take the smaller ones down with it', (t) => {
+  // The ceiling used to be enforced with `break`: the first rule that did not fit stopped the walk,
+  // so every later - possibly much smaller - rule was dropped too, and `dropped` over-reported against
+  // the documented promise that what leaves is the *least specific* rule. Ranking is by how many
+  // dimensions the situation pins, so the order is specific-first: LES-004 (two dimensions), then a
+  // deliberately long LES-005, then a one-line LES-006. A budget that fits LES-004 and LES-006 but not
+  // LES-005 is the case that tells `break` from `continue`.
+  const root = twoRules(t)
+  writeFileSync(
+    join(root, 'objects', 'lessons', 'LES-005.yaml'),
+    [
+      'lesson_id: LES-005',
+      'status: verified',
+      'kind: process',
+      'rule: >-',
+      `  ${'A long rule that must not fit: it exists to occupy the ceiling. '.repeat(40)}`,
+      'applies_to: [artifact:invoice]',
+      'source_kind: review',
+      'source_ref: REV-2026-0502',
+      'applied_count: 0',
+      '',
+    ].join('\n'),
+  )
+  writeFileSync(
+    join(root, 'objects', 'lessons', 'LES-006.yaml'),
+    [
+      'lesson_id: LES-006',
+      'status: verified',
+      'kind: process',
+      'rule: Small.',
+      'applies_to: [artifact:invoice]',
+      'source_kind: review',
+      'source_ref: REV-2026-0503',
+      'applied_count: 0',
+      '',
+    ].join('\n'),
+  )
+
+  const graph = loadGraph(root)
+  const situation = { deliverables: [], tags: ['artifact:purchase_order', 'phase:billing', 'artifact:invoice'] }
+  const selection = selectRules(graph, situation, { budget: 220 })
+
+  const ids = selection.rules.map((rule) => rule.id)
+  assert.ok(ids.includes('LES-004'), 'the specific rule fits')
+  assert.ok(ids.includes('LES-006'), 'and so does the small one behind the oversized rule')
+  assert.equal(ids.includes('LES-005'), false, 'the oversized rule is the one that leaves')
+})
