@@ -55,6 +55,16 @@ export interface ReachAuditEntry {
   reason?: string
   /** Human-readable refusal, when denied. */
   detail?: string
+  /**
+   * Who started the call, when it was not an agent's tool call.
+   *
+   * Absent means an agent asked for it through `reach_system`, which is the ordinary path and the one
+   * the approval gate guards. `panel` means a person pressed a button on the connector page: the
+   * session cookie was the authorisation, so nobody was asked, and the trail has to be able to say that
+   * afterwards. A trail that recorded both the same way would make "an agent reached the payroll system
+   * unattended" indistinguishable from "an operator tested it".
+   */
+  by?: 'panel'
 }
 
 /**

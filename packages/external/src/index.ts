@@ -40,6 +40,7 @@ import { basename, join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import { connectorSnapshot } from './connectors.ts'
+import { panelReach } from './panel.ts'
 import { reach, type CredentialSurface, type ReachResult } from './reach.ts'
 import type { RouteShape, RouteTarget } from './route.ts'
 
@@ -235,6 +236,69 @@ export interface WebSurface {
 
 /** Where the connector view is served. */
 export const CONNECTORS_ROUTE = '/connectors'
+
+/** The largest request body this page will read. A route id is a few dozen bytes. */
+const MAX_BODY_BYTES = 8 * 1024
+
+/**
+ * Read a JSON object body, with a cap.
+ *
+ * A cap rather than trust, because this is a network handler: an unbounded `data` accumulator lets a
+ * caller grow this process's memory with one request, and the endpoint's whole input is one string.
+ * The content type is not negotiated — a body that parses as the shape below is the shape, and one
+ * that does not is a 400 naming that.
+ */
+async function readJsonBody(
+  request: IncomingMessage,
+): Promise<
+  | { ok: true; value: unknown }
+  | { ok: false; status: number; code: string; error: string }
+> {
+  const chunks: Buffer[] = []
+  let size = 0
+  try {
+    for await (const chunk of request) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk))
+      size += buffer.length
+      if (size > MAX_BODY_BYTES) {
+        return {
+          ok: false,
+          status: 413,
+          code: 'body-too-large',
+          error: `the request body exceeds ${MAX_BODY_BYTES} bytes; the only field is route_id`,
+        }
+      }
+      chunks.push(buffer)
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'body-unreadable',
+      error: `the request body could not be read (${error instanceof Error ? error.message : String(error)})`,
+    }
+  }
+
+  const text = Buffer.concat(chunks).toString('utf8').trim()
+  if (text.length === 0) {
+    return { ok: false, status: 400, code: 'body-empty', error: 'a JSON body with route_id is required' }
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch (error) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'body-not-json',
+      error: `the request body is not JSON (${error instanceof Error ? error.message : String(error)})`,
+    }
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, status: 400, code: 'body-not-object', error: 'the body must be a JSON object' }
+  }
+  return { ok: true, value: parsed }
+}
 
 /** The name both packages state rather than import. */
 const GOVERNANCE_SERVICE = 'deepworkGovernance'
@@ -589,7 +653,23 @@ export function apply(ctx: ExternalContext, config: Config = {}): void {
           scoped.webServer.register({
             kind: 'prefix',
             path: CONNECTORS_ROUTE,
-            handler: (_request, response) => {
+            handler: (request, response) => {
+              // `POST /connectors/reach` is the page's one act; everything under the prefix answers the
+              // snapshot. Split by method and path here rather than registering a second route, so the
+              // page's data and its button stay one thing to find and one thing to review.
+              const path = (request.url ?? '/').split('?')[0] ?? '/'
+              if (request.method === 'POST' && path === `${CONNECTORS_ROUTE}/reach`) {
+                void serveReach(request, response)
+                return
+              }
+              if (request.method !== 'GET' && request.method !== 'HEAD') {
+                response.writeHead(405, {
+                  'content-type': 'application/json; charset=utf-8',
+                  allow: 'GET, HEAD, POST',
+                })
+                response.end(JSON.stringify({ code: 'method-not-allowed', error: 'GET or POST' }))
+                return
+              }
               // Built per request, like the route lookup: a page holding a graph from boot would keep
               // showing a route in the state it was in before somebody confirmed it.
               const snapshot = connectorSnapshot({
@@ -605,6 +685,38 @@ export function apply(ctx: ExternalContext, config: Config = {}): void {
           }),
         'deepwork-external: connector view',
       )
+
+      /**
+       * Answer one page-initiated reach.
+       *
+       * The body is read with a cap and parsed before anything is dialled; a malformed request is a
+       * 400 rather than a call with a defaulted route. No CSRF token is checked and none is needed:
+       * the host's session cookie is `SameSite=Strict`, so a cross-site form post arrives without it
+       * and is answered by the server's own authentication, not by this handler.
+       */
+      async function serveReach(request: IncomingMessage, response: ServerResponse): Promise<void> {
+        const body = await readJsonBody(request)
+        if (!body.ok) {
+          response.writeHead(body.status, { 'content-type': 'application/json; charset=utf-8' })
+          response.end(JSON.stringify({ code: body.code, error: body.error }))
+          return
+        }
+        const routeId = typeof (body.value as { route_id?: unknown }).route_id === 'string'
+          ? ((body.value as { route_id: string }).route_id)
+          : ''
+        const answer = await panelReach({
+          routeId,
+          root: ontologyRoot,
+          shape,
+          command,
+          program,
+          timeoutSeconds,
+          auditLog,
+          ...(seamOf(ctx) === undefined ? {} : { credentials: seamOf(ctx) as CredentialSurface }),
+        })
+        response.writeHead(answer.status, { 'content-type': 'application/json; charset=utf-8' })
+        response.end(JSON.stringify(answer.body, null, 2))
+      }
     })
   }
 }

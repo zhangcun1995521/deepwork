@@ -55,6 +55,15 @@ window.__ModuleLoader__.load({
      */
     const CONNECTORS_URL = '/connectors'
 
+    /**
+     * Where one page-initiated call goes.
+     *
+     * A `POST` to the host half, which resolves the same route the tool would resolve and reads the
+     * same `tool_grants`. The page deliberately does not pre-check the grant itself: a second copy of
+     * that rule is a second answer, and the host's is the one the guard answers with. What the page
+     * shows when the host refuses is the host's own reason.
+     */
+    const REACH_URL = '/connectors/reach'
     // Borders and fills derive from whatever colour the shell is painting with, so the page follows
     // the theme instead of pinning a palette. `DANGER` is the one semantic colour: it resolves to a
     // theme alias, with `currentColor` as the fallback for a shell that ships no such token — a
@@ -472,7 +481,16 @@ window.__ModuleLoader__.load({
           'This deployment declares no route.',
         )
       }
-      const headers = ['route', 'system', 'address', 'credential', 'who may call', 'last attempt', 'state']
+      const headers = [
+        'route',
+        'system',
+        'address',
+        'credential',
+        'who may call',
+        'last attempt',
+        'state',
+        'try it',
+      ]
       const rows = props.connectors.map((connector) => ({
         danger: connector.problems.length > 0,
         detail:
@@ -492,6 +510,11 @@ window.__ModuleLoader__.load({
             dialable: connector.dialable,
             problems: connector.problems,
           }),
+          react.createElement(ReachCell, {
+            id: connector.id,
+            outcome: props.outcomes[connector.id],
+            onReach: props.onReach,
+          }),
         ],
       }))
       // A table wider than the column is normal for this many columns; the box scrolls sideways
@@ -500,6 +523,80 @@ window.__ModuleLoader__.load({
         'div',
         { style: { overflow: 'auto' } },
         react.createElement(Table, { headers: headers, rows: rows }),
+      )
+    }
+
+    /**
+     * The reach column: one button, and whatever came back.
+     *
+     * Enabled for every row on purpose, including the ones the page already knows are blocked. The
+     * grant lives in the domain and is checked by the host; a button that refused to be pressed would
+     * be a second copy of that rule, and the copy that disagrees is always the one a reader believes.
+     * So the button asks, the host answers, and the answer is shown as it came — with a code, because
+     * "not-in-default-state" is something a reader can act on and a paragraph is not.
+     */
+    function ReachCell(props) {
+      const outcome = props.outcome
+      const button = react.createElement(
+        'button',
+        {
+          onClick: () => props.onReach(props.id),
+          disabled: outcome !== undefined && outcome.status === 'running',
+          style: {
+            padding: '3px 10px',
+            fontSize: 11.5,
+            color: 'inherit',
+            background: WASH,
+            border: LINE,
+            borderRadius: 5,
+            cursor: outcome !== undefined && outcome.status === 'running' ? 'default' : 'pointer',
+            whiteSpace: 'nowrap',
+          },
+        },
+        outcome !== undefined && outcome.status === 'running' ? 'reaching…' : 'Reach',
+      )
+
+      if (outcome === undefined) return button
+
+      if (outcome.status === 'running') {
+        return react.createElement(
+          'div',
+          { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+          button,
+          react.createElement('span', { style: { fontSize: 11, ...MUTED } }, 'dialling…'),
+        )
+      }
+
+      // A refusal is the interesting half: it names the check that stopped the call, and it is the
+      // reason a reader opened this page at all.
+      const refused = outcome.status === 'refused' || outcome.status === 'failed'
+      return react.createElement(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 320 } },
+        button,
+        react.createElement(
+          'span',
+          {
+            style: {
+              fontSize: 11,
+              lineHeight: 1.5,
+              fontFamily: MONO,
+              color: refused ? DANGER : 'inherit',
+              ...(refused ? {} : MUTED),
+              wordBreak: 'break-word',
+            },
+          },
+          refused
+            ? outcome.code + ' — ' + outcome.text
+            : 'exit ' +
+              String(outcome.exitCode) +
+              ' · ' +
+              (outcome.reachable ? 'reachable' : 'not reachable') +
+              ' · ' +
+              outcome.elapsedMs +
+              'ms' +
+              (outcome.output === undefined ? '' : ' · ' + outcome.output.slice(0, 160)),
+        ),
       )
     }
 
@@ -579,7 +676,11 @@ window.__ModuleLoader__.load({
             note: open + (open === 1 ? ' route' : ' routes'),
           },
           data.readable
-            ? react.createElement(ConnectorsTable, { connectors: data.connectors })
+            ? react.createElement(ConnectorsTable, {
+                connectors: data.connectors,
+                outcomes: props.outcomes,
+                onReach: props.onReach,
+              })
             : react.createElement(
                 'p',
                 { style: { fontSize: 12.5, color: DANGER } },
@@ -600,6 +701,61 @@ window.__ModuleLoader__.load({
     function ConnectorsPage() {
       const [state, setState] = react.useState({ status: 'loading' })
       const [reloads, setReloads] = react.useState(0)
+      // One outcome per route, so a slow system does not blank the rest of the table and a reader can
+      // see which rows they already tried.
+      const [outcomes, setOutcomes] = react.useState({})
+
+      const setOutcome = (id, outcome) =>
+        setOutcomes((current) => ({ ...current, [id]: outcome }))
+
+      /**
+       * Dial one route through the host half.
+       *
+       * The snapshot is re-read when the call is over, because the trail just grew: `last attempt` is
+       * read from it, and a page that kept the old answer would show a call it had itself made.
+       */
+      const dial = (id) => {
+        setOutcome(id, { status: 'running' })
+        fetch(REACH_URL, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ route_id: id }),
+        })
+          .then(async (response) => {
+            const text = await response.text()
+            let body
+            try {
+              body = text.length === 0 ? null : JSON.parse(text)
+            } catch {
+              setOutcome(id, {
+                status: 'failed',
+                code: 'not-json',
+                text: 'HTTP ' + response.status + ': ' + text.slice(0, 200),
+              })
+              return
+            }
+            if (!response.ok) {
+              setOutcome(id, {
+                status: 'refused',
+                code: (body && body.code) || 'HTTP ' + response.status,
+                text: (body && body.error) || response.statusText || 'refused',
+              })
+              return
+            }
+            setOutcome(id, {
+              status: 'reached',
+              exitCode: body.exitCode,
+              reachable: body.reachable,
+              elapsedMs: body.elapsedMs,
+              output: body.output,
+            })
+          })
+          .catch((error) => {
+            setOutcome(id, { status: 'failed', code: 'request-failed', text: String(error) })
+          })
+          .finally(() => setReloads((current) => current + 1))
+      }
 
       react.useEffect(() => {
         let cancelled = false
@@ -687,7 +843,11 @@ window.__ModuleLoader__.load({
           'Could not read ' + CONNECTORS_URL + ': ' + state.message,
         )
       } else {
-        body = react.createElement(Snapshot, { data: state.data })
+        body = react.createElement(Snapshot, {
+          data: state.data,
+          outcomes: outcomes,
+          onReach: dial,
+        })
       }
 
       // `main` is a clipped column, so the page owns its own scrolling — the shape the shipped

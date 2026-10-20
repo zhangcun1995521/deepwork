@@ -97,6 +97,15 @@ export interface ReachRequest {
    * not, and carries both the machine-readable reason and the sentence the model reads.
    */
   approve?: (route: RouteTarget) => Promise<{ reason: string; text: string } | undefined>
+  /**
+   * Who is dialling, when it is not an agent's tool call.
+   *
+   * Set by the connector page, and written into the trail so the two paths stay tellable apart. It
+   * does *not* skip any check below: a page call resolves the same route, against the same lifecycle
+   * and the same credential seam. The one thing it replaces is the question — the person who pressed
+   * the button is the person the question would have been put to.
+   */
+  by?: 'panel'
 }
 
 /**
@@ -192,8 +201,13 @@ export async function reach(request: ReachRequest): Promise<ReachResult> {
       outcome: 'denied',
       reason,
       detail: message,
+      ...(request.by === undefined ? {} : { by: request.by }),
     })
-    return new Error(message)
+    // The reason rides on the error as well as in the trail, because the connector page has to show a
+    // reader which check refused without re-deriving it from the sentence.
+    const error = new Error(message) as Error & { reason?: string }
+    error.reason = reason
+    return error
   }
 
   const found = resolveRoute(request.ontologyRoot, request.routeId, request.shape)
@@ -294,6 +308,7 @@ export async function reach(request: ReachRequest): Promise<ReachResult> {
     reachable: result.reachable,
     ...(outcome.timedOut ? { timedOut: true } : {}),
     elapsedMs: outcome.elapsedMs,
+    ...(request.by === undefined ? {} : { by: request.by }),
   })
 
   return result

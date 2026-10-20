@@ -283,7 +283,9 @@ test('a web-carrying profile gets the connector view, and it serves what the dom
   let status: number | undefined
   let body = ''
   h.routes[0]?.handler(
-    {},
+    // The handler branches on method and path, so a request that is neither is answered 405 rather
+    // than served a snapshot — which is what this models: the page's own GET.
+    { method: 'GET', url: '/connectors' },
     {
       writeHead: (code) => {
         status = code
