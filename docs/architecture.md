@@ -100,9 +100,14 @@ function. What they have instead is a surface, and the shape of that surface is 
   function at all still gets the three undeclared read tools — `ontology_get`, `ontology_find`,
   `ontology_links` — which exist precisely so that a world with no queries declared is still
   readable.
-- a declared action becomes **a tool of its own**, alongside the generic write tool. That is why an
-  action can be named where a function cannot: `tool_grants` takes the name of a tool, and only the
-  action has one.
+- a declared action becomes **a tool of its own**, alongside the generic write tool. Neither of them is
+  declared to the governance channel, and that is deliberate: an action's authority is the *write
+  path*, which knows the object type, the caller, the current state and whether a second pair of eyes
+  is required. So the guard judges **the host's own tools and every capability's tools**, and not
+  `ontology_*` at all — nothing declares those to it. `tool_grants` therefore names **programs** and
+  **capability tool names**, which are the two things a declaration cannot already judge; an entry
+  naming an action does nothing, and a reader who assumed otherwise would be reading a silence this
+  project refuses to leave anywhere else.
 - a capability's tool is a tool and nothing more. It declares what it touches, and the same guard
   that judges a write judges it.
 
@@ -200,8 +205,11 @@ paths must not be authorised by the one that happens to land inside the grant. A
 whose path cannot be found at all is refused: the implementation this was ported from allowed that
 case, which meant a renamed argument disabled the guard silently.
 
-Every branch fails closed, and every decision reaches the trail, allowances included — the entry
-carries `kind: 'guard'`, kept separate from the write path's entries because a call stopped at the
+Every refusal reaches the trail, allowances included — and so do the two branches that allow without
+judging anything, named here rather than left to be discovered: a tool the channel has never heard of
+(`govern()` returns `undefined`, which is every `ontology_*` tool and every action), and a tracked
+tool that declares nothing judgeable. The entry carries `kind: 'guard'`, kept separate from the write
+path's entries because a call stopped at the
 door has no declared object type and writing it as a write with empty fields would make the log
 quiet about the difference. Two refusals are the ones to know by name: `no-roles-configured` and
 `no-grant-declared`. Both mean nobody has said who may write this, or run the program a tool named,
