@@ -1,18 +1,20 @@
 {
   "name": "@zhangcun123/external",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Reach an outside system by the route the deployment's own domain declares — a capability plugin for DeepWork.",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": "./client/index.js",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/**/*.js",
     "lib/types/**/*.d.ts",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "client/**"
   ],
   "scripts": {
     "built:domain": "npm run build --prefix ../ontology",
@@ -25,6 +27,9 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
     }
   },
   "dependencies": {
