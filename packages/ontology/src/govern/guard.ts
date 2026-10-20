@@ -139,7 +139,7 @@ export function writeGuard(options: WriteGuardOptions): (call: GuardedCall) => s
         ...(call.agentId === undefined ? {} : { agentId: call.agentId }),
         ...decision,
       })
-      return decision.denied ? decision.detail : undefined
+      return decision.denied ? (decision.detail ?? 'denied') : undefined
     }
 
     const governance = govern(call.name)
@@ -229,12 +229,29 @@ export function writeGuard(options: WriteGuardOptions): (call: GuardedCall) => s
       return record({ denied: false, role })
     }
 
-    for (const argument of commands) {
-      const targets = extractPathsFromShell(
-        (call.arguments as Record<string, unknown> | undefined)?.[argument],
-        cwd,
-      )
-      for (const target of targets) {
+    // The command arguments are aliases, not requirements: `bash` declares two names for the same
+    // value and a deployment may use either. So they are gathered the way the write side gathers
+    // paths — every name that carries a non-empty string — and only "none of them did" is a refusal.
+    const commandLines = commands
+      .map((argument) => (call.arguments as Record<string, unknown> | undefined)?.[argument])
+      .filter((value): value is string => typeof value === 'string' && value.length > 0)
+
+    if (commands.length > 0 && commandLines.length === 0) {
+      // The mirror of `no-path-in-arguments`, and it exists for the same failure: with no command
+      // there is nothing to extract, no target to compare, and no refusal — so a renamed argument
+      // switched this half of the guard off without saying so.
+      return record({
+        denied: true,
+        role,
+        reason: 'no-command-in-arguments',
+        detail:
+          `${call.name} refused: it declares a command argument (${commands.join(', ')}) and the ` +
+          'call carries no command, so what it would write cannot be authorised.',
+      })
+    }
+
+    for (const line of commandLines) {
+      for (const target of extractPathsFromShell(line, cwd)) {
         if (allowed.some((base) => isInside(base, target))) continue
         return record({
           denied: true,

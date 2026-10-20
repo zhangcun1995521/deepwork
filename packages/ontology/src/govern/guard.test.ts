@@ -85,6 +85,12 @@ test('a shell redirect outside the declared directories is refused', () => {
   assert.match(result as string, /redirects into/)
 })
 
+test('a clobber redirect outside the declared directories is refused too', () => {
+  // End to end, because the extractor test alone would not prove the guard was reached with it.
+  const result = guard()({ name: 'bash', arguments: { command: 'echo x >|/etc/hosts' }, agentId: 'lead-1' })
+  assert.match(result as string, /redirects into/)
+})
+
 test('pwsh is covered as well as bash', () => {
   const result = guard()({ name: 'pwsh', arguments: { command: 'Set-Content x > ../../evil.txt' }, agentId: 'lead-1' })
   assert.equal(typeof result, 'string')
@@ -93,6 +99,19 @@ test('pwsh is covered as well as bash', () => {
 test('a shell redirect into a permitted directory is allowed', () => {
   const result = guard()({ name: 'pwsh', arguments: { command: 'echo ok > domain/cases/a/log.md' }, agentId: 'lead-1' })
   assert.equal(result, undefined)
+})
+
+test('a shell command with no command in the arguments is refused rather than waved through', () => {
+  // The other half of the renamed-argument failure: with no command there is nothing to extract,
+  // so a call whose argument name changed used to reach zero targets and be allowed. The command
+  // arguments are aliases, so `{}` is the case to refuse and `{cmd: '…'}` is the case to accept.
+  const result = guard()({ name: 'bash', arguments: {}, agentId: 'lead-1' })
+  assert.match(result as string, /no command/)
+  assert.equal(
+    guard()({ name: 'bash', arguments: { cmd: 'ls -la' }, agentId: 'lead-1' }),
+    undefined,
+    'the second argument name is an alias, not a second requirement',
+  )
 })
 
 test('writing to a device file is not treated as an escape', () => {
@@ -145,6 +164,18 @@ test('shell extraction finds redirects and tee targets', () => {
   assert.deepEqual(extractPathsFromShell('echo a | tee two.md', CWD), [resolve(CWD, 'two.md')])
   assert.deepEqual(extractPathsFromShell('echo a > /dev/null', CWD), [])
   assert.deepEqual(extractPathsFromShell(undefined, CWD), [])
+})
+
+test('every spelling of a file redirect is extracted, not just the two common ones', () => {
+  // `>|` is bash's clobber-under-noclobber, and it was the hole: `|` was excluded from the target
+  // class, so the operator itself matched nothing and the guard saw zero targets and allowed the
+  // call. The two `&>` forms were missing the same way. Each of these writes a file.
+  assert.deepEqual(extractPathsFromShell('echo a >|outside.md', CWD), [resolve(CWD, 'outside.md')])
+  assert.deepEqual(extractPathsFromShell('echo a >| outside.md', CWD), [resolve(CWD, 'outside.md')])
+  assert.deepEqual(extractPathsFromShell('echo a &> outside.md', CWD), [resolve(CWD, 'outside.md')])
+  assert.deepEqual(extractPathsFromShell('echo a &>> outside.md', CWD), [resolve(CWD, 'outside.md')])
+  // And a descriptor duplication is still not a file: `2>&1` must not be read as writing "1".
+  assert.deepEqual(extractPathsFromShell('run 2>&1', CWD), [])
 })
 
 test('the gap the guard does not cover is stated, not implied', () => {

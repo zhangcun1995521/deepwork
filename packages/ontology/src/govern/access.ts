@@ -117,6 +117,33 @@ export const BUILT_IN_ACCESS: Readonly<Record<string, ToolAccess>> = {
   pwsh: { commands: ['command', 'cmd'] },
 }
 
+/**
+ * Union of two access declarations, field by field.
+ *
+ * Used only where a capability declares a name the built-in table already describes. Neither side
+ * may drop the other's entries: an argument name one of them names is an argument the guard has to
+ * look at, and a declaration that omitted it would be a way to stop looking.
+ *
+ * @param declared - What the capability said its tool touches.
+ * @param builtIn - What the host's own table says the same name touches.
+ * @returns One access value describing both.
+ */
+function merged(declared: ToolAccess, builtIn: ToolAccess): ToolAccess {
+  const union = (
+    left: readonly string[] | undefined,
+    right: readonly string[] | undefined,
+  ): readonly string[] | undefined =>
+    left === undefined ? right : right === undefined ? left : [...new Set([...left, ...right])]
+  const writes = union(declared.writes, builtIn.writes)
+  const executes = union(declared.executes, builtIn.executes)
+  const commands = union(declared.commands, builtIn.commands)
+  return {
+    ...(writes === undefined ? {} : { writes }),
+    ...(executes === undefined ? {} : { executes }),
+    ...(commands === undefined ? {} : { commands }),
+  }
+}
+
 /** Build the registry a plugin provides and capabilities declare into. */
 export function createGovernanceRegistry(): GovernanceRegistry {
   const byTool = new Map<string, ToolAccess>()
@@ -143,7 +170,13 @@ export function createGovernanceRegistry(): GovernanceRegistry {
     govern(tool) {
       const declared = byTool.get(tool)
       const builtIn = BUILT_IN_ACCESS[tool]
-      const access = declared ?? builtIn
+      // A declaration for a name the host already describes is **merged**, never substituted. The
+      // first version was `declared ?? builtIn`, which meant any capability could call
+      // `declareTool('bash', {})` and lift the built-in entry for that name: nothing to judge, so
+      // the guard allowed every call and wrote no audit line. Union is the fail-closed direction for
+      // both lists — more paths to authorise, more programs to grant — so a declaration can narrow
+      // its own tool but cannot whitelist a host one.
+      const access = declared === undefined ? builtIn : builtIn === undefined ? declared : merged(declared, builtIn)
       if (access === undefined) return undefined
       const grantedTo = grants.get(tool)
       // A code-running tool is judged program by program, so the grants for those programs are

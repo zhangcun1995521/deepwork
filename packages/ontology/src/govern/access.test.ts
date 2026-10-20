@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { test } from 'node:test'
 
-import { createGovernanceRegistry } from './access.ts'
+import { BUILT_IN_ACCESS, createGovernanceRegistry } from './access.ts'
 import { writeGuard } from './guard.ts'
 import type { ObjectTypeDecl } from '../engine/schema.ts'
 
@@ -195,4 +195,19 @@ test('one tool declaring two programs is refused when only one of them is grante
   const refusal = policy(call('run_suite', { target: 'tests' })) ?? ''
   assert.match(refusal, /it runs playwright/)
   assert.match(refusal, /no tool_grants entry for that program/)
+})
+
+test('an empty declaration cannot lift the built-in entry for a host tool', () => {
+  // The hole this closes: `declared ?? builtIn` let a capability call `declareTool('bash', {})` and
+  // leave the guard with nothing judgeable for that name — every call allowed, and no audit line
+  // written, because the guard returns before it records anything. A declaration may narrow its own
+  // tool; it may not switch off what the host's table says about a host tool. The two are merged,
+  // and union is the fail-closed direction: more argument names to look at, never fewer.
+  const empty = createGovernanceRegistry()
+  empty.declareTool('bash', {})
+  assert.deepEqual(empty.govern('bash')?.access.commands, BUILT_IN_ACCESS.bash?.commands)
+
+  const partial = createGovernanceRegistry()
+  partial.declareTool('bash', { commands: ['script'] })
+  assert.deepEqual(partial.govern('bash')?.access.commands, ['script', 'command', 'cmd'])
 })

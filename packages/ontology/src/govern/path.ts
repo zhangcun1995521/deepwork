@@ -13,8 +13,16 @@
 
 import { isAbsolute, relative, resolve } from 'node:path'
 
-/** Redirect targets, e.g. `echo x > notes.md` or `echo x >> notes.md`. */
-const REDIRECT = /(?:>>|>)\s*([^\s|;&]+)/g
+/**
+ * Redirect targets, e.g. `echo x > notes.md` or `echo x >> notes.md`.
+ *
+ * Every spelling that writes a file has to be in the alternatives, and `>|` is the one that was
+ * missing: it is bash's "clobber even under noclobber", and because `|` was excluded from the
+ * target class below, `echo x >|/outside/f` matched nothing at all — no target, no refusal, and the
+ * write happened. `&>` and `&>>` (both streams to one file, bash and pwsh) were missing for the same
+ * kind of reason: a shorter alternative that happened to cover the common case.
+ */
+const REDIRECT = /(?:&>>|&>|>>|>\||>)\s*([^\s|;&]+)/g
 
 /** `tee` targets, e.g. `echo x | tee notes.md`. */
 const TEE = /\btee\s+(?:-[a-zA-Z]+\s+)*([^\s|;&]+)/g
