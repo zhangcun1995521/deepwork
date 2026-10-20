@@ -37,7 +37,9 @@
  */
 
 import { basename, join } from 'node:path'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 
+import { connectorSnapshot } from './connectors.ts'
 import { reach, type CredentialSurface, type ReachResult } from './reach.ts'
 import type { RouteShape, RouteTarget } from './route.ts'
 
@@ -66,7 +68,17 @@ export interface Config {
    * vocabulary, and guessing `AccessRoute` here would make this package work against the example
    * domain and quietly mis-read a deployment that called its routes `Endpoint`.
    */
-  route?: Partial<RouteShape>
+  route?: Partial<RouteShape> & {
+    /**
+     * Field holding the name of what a route reaches, for the connector view only.
+     *
+     * Optional and separate from {@link RouteShape}, which is the three names *reaching* needs: this
+     * one is read by nothing on the call path, and a domain that points at its target by relation needs
+     * to configure nothing here. Two real domains point in the two different ways, which is why both
+     * are supported rather than one being declared correct.
+     */
+    target?: string
+  }
   /** Seconds before the connector is killed, tree and all. */
   timeoutSeconds?: number
   /**
@@ -203,6 +215,26 @@ const REFUSAL_DETAIL: Record<Exclude<ApprovalOutcome, 'allowed-once'>, string> =
     'Nobody could be asked: this environment has no answerer for an approval question. That is a ' +
     'refusal and not a permission, so the route was not dialled.',
 }
+
+/**
+ * The web surface a web-carrying profile provides, as this plugin uses it.
+ *
+ * Structural, like every other seam here: the route registration is the host's, and this package has
+ * to load in a composition that has no web server at all.
+ */
+export interface WebSurface {
+  webServer: {
+    register(route: {
+      kind: 'exact' | 'prefix'
+      path: string
+      handler: (request: IncomingMessage, response: ServerResponse) => void | Promise<void>
+    }): () => void
+  }
+  effect(callback: () => (() => void) | void, label: string): void
+}
+
+/** Where the connector view is served. */
+export const CONNECTORS_ROUTE = '/connectors'
 
 /** The name both packages state rather than import. */
 const GOVERNANCE_SERVICE = 'deepworkGovernance'
@@ -522,6 +554,57 @@ export function apply(ctx: ExternalContext, config: Config = {}): void {
     // compiled, and then called a method on a context that does not have one.
     governance([GOVERNANCE_SERVICE], (scoped: Record<string, GovernanceSurface>) => {
       scoped[GOVERNANCE_SERVICE]?.declareTool(TOOL_NAME, { executes: [program] })
+    })
+  }
+
+  // The connector view, served the same lazy way and for the same reason as the domain panel: a
+  // profile may have no web server, and everything above has to work identically without one. The
+  // absence is said out loud rather than left to be discovered, because the page is how a human
+  // finds out that a route nobody granted exists.
+  //
+  // Registered as an exact path rather than under the domain panel's prefix: these are two views of
+  // one deployment, each owned by the package that knows its vocabulary, and neither should be a
+  // sub-path of the other's route table.
+  if (ctx.inject === undefined) {
+    warn(
+      'the runtime exposes no service lookup, so the connector view is not served — nothing shows ' +
+        'which routes this deployment declares or how the last attempt ended',
+    )
+  } else {
+    ctx.inject<WebSurface>(['webServer'], (scoped) => {
+      // The scoped context carries two things, and they are not the same object: `webServer` is the
+      // service a route is registered on, `effect` is the context's own tie to this plugin's lifetime.
+      // Calling `effect` on the service instead compiles and does nothing — so the first version of
+      // this block registered no route at all, and the optional call made that silent. A guard here
+      // rather than `?.` is the point: an absence that produces no route must produce a sentence.
+      if (typeof scoped.effect !== 'function') {
+        warn(
+          'this runtime exposes a web server without the effect that ties a route to this plugin, so ' +
+            'the connector view is not registered',
+        )
+        return
+      }
+      scoped.effect(
+        () =>
+          scoped.webServer.register({
+            kind: 'prefix',
+            path: CONNECTORS_ROUTE,
+            handler: (_request, response) => {
+              // Built per request, like the route lookup: a page holding a graph from boot would keep
+              // showing a route in the state it was in before somebody confirmed it.
+              const snapshot = connectorSnapshot({
+                root: ontologyRoot,
+                shape,
+                target: config.route?.target ?? '',
+                program,
+                auditLog,
+              })
+              response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+              response.end(JSON.stringify(snapshot, null, 2))
+            },
+          }),
+        'deepwork-external: connector view',
+      )
     })
   }
 }

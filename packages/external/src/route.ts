@@ -117,7 +117,7 @@ export interface RouteLifecycle {
  * @param lifecycle - The type's lifecycle declaration.
  * @returns The effective state, and whether it came from the fallback rather than the data.
  */
-function stateOf(
+export function stateOf(
   object: OntologyObject,
   lifecycle: RouteLifecycle,
 ): { state: string; fromData: boolean } {

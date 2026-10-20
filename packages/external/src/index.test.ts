@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url'
 
 import { loadGraph } from '@zhangcun123/ontology/engine'
 
-import { apply, type ExternalContext } from './index.ts'
+import { apply, CONNECTORS_ROUTE, type ExternalContext } from './index.ts'
 
 /** The fixture domain, read for real: `apply` is handed a root, not a graph. */
 const DOMAIN = fileURLToPath(new URL('../tests/fixtures/domain', import.meta.url))
@@ -42,6 +42,18 @@ interface Harness {
   tools: Tool[]
   declared: { tool: string; access: unknown }[]
   logs: string[]
+  /** Routes registered on the web server, when the harness models one. */
+  routes: WebRoute[]
+}
+
+/** A registered route, as the host would hold it. */
+interface WebRoute {
+  kind: 'exact' | 'prefix'
+  path: string
+  handler: (
+    request: unknown,
+    response: { writeHead(code: number, headers: Record<string, string>): void; end(body: string): void },
+  ) => void
 }
 
 /**
@@ -50,12 +62,19 @@ interface Harness {
  * `inject: false` models a host that exposes no service lookup at all — a different thing from a
  * host that exposes one and has no governance service in it, which is what `governance: false`
  * stands for. The distinction matters because only the first is knowable, and the plugin says so.
+ *
+ * `web: true` models a web-carrying composition, and it models the shape that matters: the callback
+ * is handed a scoped context carrying **both** the service and cordis's own `effect`. The first
+ * version of the connector view called `effect` on the service instead, which compiled, did nothing,
+ * and registered no route — indistinguishable from a working one until a request 404'd. That is why
+ * this harness now has a web server in it at all.
  */
-function harness(options: { governance?: boolean; inject?: boolean } = {}): Harness {
+function harness(options: { governance?: boolean; inject?: boolean; web?: boolean } = {}): Harness {
   const state: Harness = {
     tools: [],
     declared: [],
     logs: [],
+    routes: [],
     ctx: undefined as unknown as ExternalContext,
   }
   const wantsGovernance = options.governance ?? true
@@ -82,6 +101,17 @@ function harness(options: { governance?: boolean; inject?: boolean } = {}): Harn
                   state.declared.push({ tool, access })
                   return () => {}
                 },
+              }
+            }
+            if (names.includes('webServer') && options.web === true) {
+              scoped.webServer = {
+                register: (route: WebRoute) => {
+                  state.routes.push(route)
+                  return () => {}
+                },
+              }
+              scoped.effect = (effect: () => unknown) => {
+                effect()
               }
             }
             callback(scoped as never)
@@ -234,4 +264,46 @@ test('a context with no service lookup at all is reported, because then it is kn
   // case where the absence is not "not yet" but "never".
   assert.equal(h.tools.length, 1)
   assert.ok(h.logs.some((line) => line.includes('not governed by the write guard')))
+})
+
+test('a web-carrying profile gets the connector view, and it serves what the domain declares', () => {
+  const h = harness({ web: true })
+  apply(h.ctx, CONFIGURED)
+
+  // One route, at the path the deployment can open. A prefix rather than an exact path so a query
+  // string or a trailing segment cannot make the page unreachable, and outside the domain panel's
+  // own prefix so the two views do not sit in each other's route tables.
+  assert.deepEqual(
+    h.routes.map((route) => `${route.kind} ${route.path}`),
+    [`prefix ${CONNECTORS_ROUTE}`],
+    'a route that was never registered reads exactly like one that works, until a request 404s',
+  )
+
+  // What it serves, read the way a browser would: the handler writes a status and a body.
+  let status: number | undefined
+  let body = ''
+  h.routes[0]?.handler(
+    {},
+    {
+      writeHead: (code) => {
+        status = code
+      },
+      end: (text) => {
+        body = text
+      },
+    },
+  )
+  assert.equal(status, 200)
+  const snapshot = JSON.parse(body) as { routeType: string; connectors: unknown[] }
+  assert.equal(snapshot.routeType, 'AccessRoute')
+  assert.equal(snapshot.connectors.length, 5, 'the fixture domain declares five routes')
+})
+
+test('a web server with no effect is reported rather than silently ignored', () => {
+  // The shape this suite was written for: a service is there, the context's tie to the plugin's
+  // lifetime is not. The registration cannot happen, so it has to be said.
+  const h = harness()
+  apply(h.ctx, CONFIGURED)
+  assert.equal(h.routes.length, 0)
+  assert.ok(h.logs.some((line) => line.includes('connector view is not registered')))
 })

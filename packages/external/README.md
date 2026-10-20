@@ -29,6 +29,7 @@ route:          # which of the domain's own names mean what
   type:         # the object type a route is, e.g. AccessRoute
   url:          # the field holding the address to dial
   auth_ref:     # the field holding the credential reference name
+  target:       # optional: the field naming what a route reaches, for the view only
 timeoutSeconds: # 30
 auditLog:       # <ontologyRoot>/.audit.jsonl, beside the ontology's own write trail
 ```
@@ -96,6 +97,51 @@ One JSON line per call, refusals included, at `auditLog`. It records the route, 
 outcome, the exit status and how long the run took. It never records the credential, the program's
 output, or the address — the address can carry a token in its query string, and a log is not the
 place to find that out.
+
+## The connector view
+
+`GET /connectors` on a web-carrying profile serves what this deployment can reach, read from the same
+domain the tool reads:
+
+```json
+{
+  "routeType": "ConnectionPattern",
+  "summary": { "routes": 9, "complete": 9, "callable": 0 },
+  "findings": [
+    { "code": "program-not-granted", "detail": "tool_grants has no entry for \"curl\" …" }
+  ],
+  "connectors": [
+    {
+      "id": "CP-ALIYUN-001",
+      "system": "aliyun-observability",
+      "address": { "field": "base_url", "set": true },
+      "credential": { "field": "auth_ref", "name": "", "addressable": false },
+      "callers": { "program": "curl", "programRoles": null, "toolRoles": null },
+      "last": null,
+      "problems": []
+    }
+  ]
+}
+```
+
+Two numbers rather than one, because a deployment can have every route declared correctly and nothing
+a call would get through: `complete` counts the routes whose own declaration says nothing against a
+call, `callable` counts the ones that would actually go through given the deployment's grants as well.
+
+`problems` are things one route can fix — an empty address, a blank reference, a state a read hides.
+`findings` are facts about the composition, reported once because every route inherits them: a program
+no `tool_grants` entry names, a field the connector was told to read that the type does not declare, a
+target neither a relation nor a configured field answers. A finding marked as blocking sets `callable`
+to zero, so the summary cannot claim a capability the guard would refuse.
+
+**What it never shows.** Not the address — only the field's name and whether it is filled. Not the
+credential — the name is shown, because it is what a domain declares and what an operator looks up,
+and the material is never asked for. And not a "test this route" button: reaching a system is an agent
+act behind an approval gate, and a page has no agent identity to ask on behalf of. The view says who
+to ask instead — an agent calling `reach_system`.
+
+A route marked complete has a complete declaration, not a known answer: whether the credential is
+stored under that name and whether the program exists here are facts only a call settles.
 
 ## Approval
 

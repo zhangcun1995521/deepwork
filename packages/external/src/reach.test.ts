@@ -181,8 +181,13 @@ function deployment(
     // The lookup the runtime exposes, with no governance service behind it: the plugin declares its
     // program to nobody and says nothing, which is the case `index.test.ts` covers from the other
     // side — the declaration happening when a service IS mounted.
+    //
+    // A service that is not mounted never calls back at all, which is what these runs are: the seam
+    // waits for something that is not coming. Calling back with an empty scope instead would model a
+    // mounted web server whose context lacks `effect` — a real (and reported) case, but not this one.
     inject: ((names: readonly string[], callback: (scoped: never) => void) => {
       if (names.includes('deepworkGovernance')) return
+      if (names.includes('webServer')) return
       callback({} as never)
     }) as ExternalContext['inject'],
     // The seams are reached through the runtime's lookup, and only through it: a property read is

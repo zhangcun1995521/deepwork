@@ -34,10 +34,16 @@
         # Three names rather than three defaults, because a domain that called its route type
         # `Endpoint` and its secret field `token_ref` is a working domain: nothing in the connector's
         # code knows the customer's vocabulary, and nothing here guesses it either.
+        #
+        # `target` is a fourth, and it is read by the connector *view* only — never on the call path,
+        # where a route reaches whatever its address points at. A domain that says what a route
+        # reaches by relation needs nothing here; one that says it with a field names that field, so
+        # the page can show what each connector is for instead of only that it exists.
         route:
           type: !!js 'process.env.DEEPWORK_EXTERNAL_ROUTE_TYPE ?? ""'
           url: !!js 'process.env.DEEPWORK_EXTERNAL_ROUTE_URL_FIELD ?? ""'
           auth_ref: !!js 'process.env.DEEPWORK_EXTERNAL_ROUTE_AUTH_FIELD ?? ""'
+          target: !!js 'process.env.DEEPWORK_EXTERNAL_ROUTE_TARGET_FIELD ?? ""'
         # Seconds before the program is killed, tree and all. A connector dialling a gateway that
         # never answers must not take the agent's turn with it, and 30 seconds is the point at which
         # an interactive call has already failed from the caller's side.
