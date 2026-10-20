@@ -63,7 +63,7 @@ interface Deployment {
 /** A stand-in for the host's approval service: it records what it was asked and answers as told. */
 interface FakeApproval {
   surface: ApprovalSurface
-  asked: { agent: unknown; toolName: string; reason?: string }[]
+  asked: { agent: unknown; toolName: string; callId?: string; reason?: string }[]
 }
 
 /**
@@ -79,7 +79,12 @@ function fakeApproval(outcome: ApprovalOutcome | Error = 'allowed-once'): FakeAp
     asked,
     surface: {
       async request(request) {
-        asked.push({ agent: request.agent, toolName: request.toolName, ...(request.reason === undefined ? {} : { reason: request.reason }) })
+        asked.push({
+          agent: request.agent,
+          toolName: request.toolName,
+          ...(request.callId === undefined ? {} : { callId: request.callId }),
+          ...(request.reason === undefined ? {} : { reason: request.reason }),
+        })
         if (outcome instanceof Error) throw outcome
         return outcome
       },
@@ -463,7 +468,7 @@ test('a call is a question before it is a dial, and the question names the route
     credentials: seam({ [REFERENCE]: SECRET }),
     approval: approval.surface,
   })
-  const exec: ExecutionContext = { agent: { id: 'agent-1' } }
+  const exec: ExecutionContext = { agent: { id: 'agent-1' }, callId: 'call-42' }
 
   const result = (await mounted.tool.execute({ route_id: 'R-1' }, exec)) as ReachResult
 
@@ -475,6 +480,10 @@ test('a call is a question before it is a dial, and the question names the route
   assert.match(approval.asked[0]?.reason ?? '', /R-1/)
   assert.match(approval.asked[0]?.reason ?? '', /127\.0\.0\.1/)
   assert.equal(approval.asked[0]?.agent, exec.agent, 'asked on behalf of that agent, as the host routes it')
+  // The call id is what ties the host's `approval/asked` and `approval/decided` records to the call
+  // the interface already rendered. Dropping it left the trail unable to say which call was
+  // approved — the one thing a governance trail exists to answer.
+  assert.equal(approval.asked[0]?.callId, 'call-42', 'the question names the call it is about')
 })
 
 test('one grant covers one route for one agent, and nothing else', async (t) => {

@@ -102,6 +102,13 @@ export interface RegisteredTool {
  */
 export interface ExecutionContext {
   agent?: { id?: string }
+  /**
+   * The tool call this execution belongs to, when the host names one.
+   *
+   * Passed straight on to the approval question: it is what makes `approval/asked` and
+   * `approval/decided` in the session log correlate with the call the interface rendered.
+   */
+  callId?: string
   /** The host's own cancellation signal, passed on to the approval question. */
   signal?: unknown
 }
@@ -160,6 +167,16 @@ export interface ApprovalSurface {
   request(request: {
     agent: unknown
     toolName: string
+    /**
+     * The tool call being approved, when the host names one.
+     *
+     * Not decoration: the host writes `approval/asked` and `approval/decided` into the session log,
+     * and this id is what ties that pair to the call the interface already rendered. Without it the
+     * trail records that somebody was asked about something, and cannot say which call the answer
+     * was about — in a package whose product claim is a governance trail, that is the difference
+     * between an audit and a diary.
+     */
+    callId?: string
     reason?: string
     signal?: unknown
   }): Promise<ApprovalOutcome>
@@ -405,6 +422,7 @@ export function apply(ctx: ExternalContext, config: Config = {}): void {
       outcome = await approval.request({
         agent: exec.agent,
         toolName: TOOL_NAME,
+        ...(exec.callId === undefined ? {} : { callId: exec.callId }),
         reason:
           `Allow this agent to dial route "${route.id}"${reaches} at ${route.url}. This session may ` +
           `dial that route without asking again; every other route asks separately.`,

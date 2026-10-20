@@ -49,7 +49,18 @@ export interface RegisteredTool {
   description: string
   parameters: unknown
   output: { schema: unknown; render: (args: unknown, value: unknown) => unknown }
-  execute: (args: never, exec: { agentId?: string }) => Promise<unknown>
+  /**
+   * No second parameter, deliberately.
+   *
+   * The host calls `execute(args, exec)` with a live execution context, and the shape this file used
+   * to declare for it (`{ agentId?: string }`) was not that shape: identity reaches a tool as
+   * `exec.agent.id`, and there is no `agentId` field anywhere in it. Nothing here reads it, so the
+   * wrong declaration could not fail a test — it would have failed the first person to add a role
+   * check to `run_tests`, who would have read `undefined` from a field that looked authoritative.
+   * A tool that does not use the context does not declare it; `ontology/tools/register.ts` is where
+   * this repo maps the host's shape, and it maps `exec.agent.id`.
+   */
+  execute: (args: never) => Promise<unknown>
 }
 
 /** The slice of the runtime context this plugin uses. Structural, and so host-free. */
