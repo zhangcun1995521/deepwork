@@ -70,7 +70,23 @@ const writeConnectionMessage: ConnectionWriter = (stdin, message, done) => {
   stdin.write(encodeMessage(message), done)
 }
 
+/**
+ * The two halves of the host's child-environment scrub, copied rather than imported.
+ *
+ * A language server is a third-party binary, and it does not need this harness's keys or its own
+ * identity. `<host>/dsh-subprocess` scrubs the same two things for every child it starts — a
+ * credential-shaped name, and **every `DSH_*` name** — and this copy had only the first half, so the
+ * harness's own variables reached the server. The second half matters because those names carry
+ * deployment facts (home, domain root, mode) that are not the server's business, and because a
+ * harness that leaks its identity to a third-party binary has one less boundary than it claims.
+ *
+ * Both halves match case-insensitively for the reason the host gives: Windows environment names are
+ * case-insensitive, so a parent `dsh_*` entry would otherwise survive and read back as `DSH_*`.
+ * Copied, not imported, because this package depends on nothing from the host; the cost of a copy is
+ * exactly the drift this comment exists to make visible.
+ */
 const CREDENTIAL_KEY = /(KEY|PASSWORD|SECRET|TOKEN)/i
+const HARNESS_ENV_PREFIX = /^DSH_/i
 
 /**
  * Variables whose names look like credentials are not handed to a language server.
@@ -88,7 +104,7 @@ export function launchEnvironment(
 ): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {}
   for (const [key, value] of Object.entries(ambient)) {
-    if (CREDENTIAL_KEY.test(key)) continue
+    if (CREDENTIAL_KEY.test(key) || HARNESS_ENV_PREFIX.test(key)) continue
     environment[key] = value
   }
   return { ...environment, ...overrides }
