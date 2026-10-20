@@ -1,5 +1,16 @@
 # @zhangcun123/role
 
+## Install
+
+```sh
+dsh plugin --profile web add @zhangcun123/role
+```
+
+Then add `@zhangcun123/role` to `dsh.profile.bundles` in the profile's `package.json` (the plugin manager does
+both steps). Requires DeepSeek Harness `0.1.7-rc.2` and up within the `0.1` line: the manifest declares
+that range as a peer dependency, and the harness refuses a plugin built for a different runtime instead
+of loading it into one — which is the failure this package would rather have.
+
 > The role a mode acts as, and the prompt it works under.
 
 A **mode** is an agent preset, and a mode has to be able to say who its agents are. This plugin is

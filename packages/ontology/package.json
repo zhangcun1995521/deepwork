@@ -68,6 +68,14 @@
   "dependencies": {
     "js-yaml": "^4.2.0"
   },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=0.1.7-rc.2 <0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",

@@ -1,5 +1,16 @@
 # @zhangcun123/external
 
+## Install
+
+```sh
+dsh plugin --profile web add @zhangcun123/external
+```
+
+Then add `@zhangcun123/external` to `dsh.profile.bundles` in the profile's `package.json` (the plugin manager does
+both steps). Requires DeepSeek Harness `0.1.7-rc.2` and up within the `0.1` line: the manifest declares
+that range as a peer dependency, and the harness refuses a plugin built for a different runtime instead
+of loading it into one — which is the failure this package would rather have.
+
 > A DeepWork capability: reach an outside system by the route the deployment's own domain declares.
 
 The connector the ontology's [`examples/outside-systems`](../ontology/examples/outside-systems)

@@ -46,6 +46,14 @@
     "registry": "https://registry.npmjs.org",
     "access": "public"
   },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=0.1.7-rc.2 <0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.9.0"

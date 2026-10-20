@@ -1,5 +1,16 @@
 # @zhangcun123/computer
 
+## Install
+
+```sh
+dsh plugin --profile web add @zhangcun123/computer
+```
+
+Then add `@zhangcun123/computer` to `dsh.profile.bundles` in the profile's `package.json` (the plugin manager does
+both steps). Requires DeepSeek Harness `0.1.7-rc.2` and up within the `0.1` line: the manifest declares
+that range as a peer dependency, and the harness refuses a plugin built for a different runtime instead
+of loading it into one — which is the failure this package would rather have.
+
 > A DeepWork capability: look at this machine's windows, and act on them.
 
 A **capability** in this platform's sense is one plugin that gives an agent an ability. Here the

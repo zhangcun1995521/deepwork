@@ -1,5 +1,16 @@
 # @zhangcun123/test-runner
 
+## Install
+
+```sh
+dsh plugin --profile web add @zhangcun123/test-runner
+```
+
+Then add `@zhangcun123/test-runner` to `dsh.profile.bundles` in the profile's `package.json` (the plugin manager does
+both steps). Requires DeepSeek Harness `0.1.7-rc.2` and up within the `0.1` line: the manifest declares
+that range as a peer dependency, and the harness refuses a plugin built for a different runtime instead
+of loading it into one — which is the failure this package would rather have.
+
 > A DeepWork capability: run a project's tests, and read what the run said.
 
 A **capability** in this platform's sense is one plugin that gives an agent an ability — here,
