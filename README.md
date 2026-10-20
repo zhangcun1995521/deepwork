@@ -14,6 +14,24 @@ DeepWork is a platform built on [DeepSeek Harness](https://github.com/deepseek-a
 enterprise's own world, and the rules for acting in it. A plugin, not a fork, and a new domain
 costs YAML rather than code.
 
+## What the governance is, and what it is not
+
+The rules are enforced against **declarations**, not against behaviour. A capability says what its
+tool touches — which argument is a path it writes, which program it starts — and the guard judges
+every call against that plus the domain's grants, before it runs and in the audit trail afterwards.
+Nothing verifies the declaration against what the tool actually does. A capability that described
+itself dishonestly would be trusted, and a tool that reaches the world through its own code rather
+than through the shell it declared is outside the door entirely.
+
+So the guarantee here is **advisory**: a capability that declares honestly is governed, refused when
+it must be, and recorded every time — and reviewing that capability is what makes its declaration
+true. What this repository does **not** claim is that nothing can exceed its authority. Claiming that
+needs a boundary the current composition cannot express: one where the only way to touch the world
+is a channel the guard can see, so that "undeclared" and "impossible" become the same thing. That is
+the direction this project is built to move in, and it is not where it is today. The
+[architecture document](docs/architecture.md) says which branches pass without judging anything, so
+a reader can check the claim against the code.
+
 ## The whole project, as one line
 
 Every part of this repository is one step of the same journey: a **world is declared**, an
