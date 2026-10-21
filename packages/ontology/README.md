@@ -191,6 +191,30 @@ A capped result always says it was capped. `total`, `returned` and `truncated` a
 required fields of every tool's output, because a result that hides its own truncation
 invites the model to read a partial answer as the whole one.
 
+## Seeing it as a graph
+
+```bash
+node packages/ontology/scripts/export-rdf.ts <domain-directory> -o domain.rdf
+node packages/ontology/scripts/export-rdf.ts <domain-directory> --instances --limit 40 -o with-data.rdf
+```
+
+Ordinary OWL: types become `owl:Class`, relations become `owl:ObjectProperty` with
+`rdfs:domain`/`rdfs:range`, instances become `owl:NamedIndividual`. Any RDF viewer reads it;
+[Microsoft's Ontology Playground](https://microsoft.github.io/Ontology-Playground/) is one that
+imports a file and draws a clickable graph, which makes it a useful way to *look* at a domain
+before arguing about it.
+
+**Schema is the default, and that is the point.** A real domain carries thousands of instances: one
+in use here has over four thousand, which a viewer draws as a hairball or silently collapses into a
+hierarchy summary. What a reader wants from a picture is the twenty types and the relations between
+them, so `--instances` is for the cases that need evidence.
+
+**The picture is a projection, and the file says so.** A graph viewer draws what it can see, and
+this domain format has no cardinality, no type hierarchy and no `kind`/`role`/`phase`/`relator`
+distinction — so a graph that looks complete is missing exactly what the modelling layer knows.
+That is the same loss as reading an exported RDF and concluding the ontology is thin. The export
+emits that as a comment in the document rather than leaving it to be rediscovered.
+
 ## Known limitations
 
 - **Reads reflect the loaded graph.** A write refreshes it in place, but a domain edited
