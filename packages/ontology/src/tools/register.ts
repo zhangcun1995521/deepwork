@@ -23,8 +23,8 @@ import {
   deriveTools,
   type DeriveOptions,
   type JsonSchemaNode,
-  type QueryResult,
   type ToolArgs,
+  type ToolValue,
 } from './derive.ts'
 import { deriveActionTools } from './actions.ts'
 import { deriveWriteTools, type WriteOptions } from './write.ts'
@@ -58,7 +58,7 @@ export interface RegisterableTool {
     schema: JsonSchemaNode
     render: (args: ToolArgs, value: unknown) => TextContent[]
   }
-  execute: (args: ToolArgs, exec?: ExecutionContext) => Promise<QueryResult> | QueryResult
+  execute: (args: ToolArgs, exec?: ExecutionContext) => Promise<ToolValue> | ToolValue
 }
 
 /** The shape the runtime hands a guard: its own tool-execution object. */
@@ -154,7 +154,7 @@ export function registerOntologyTools(
           schema: tool.outputSchema,
           // The derivation returns prose; the runtime wants content blocks. Keeping
           // the derivation framework-free is what puts this conversion in one place.
-          render: (args, value) => [{ type: 'text', text: tool.render(args, value as QueryResult) }],
+          render: (args, value) => [{ type: 'text', text: tool.render(args, value as ToolValue) }],
         },
         // The caller's identity reaches the tool from here and nowhere else; a read
         // tool simply ignores it.

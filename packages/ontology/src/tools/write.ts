@@ -505,7 +505,7 @@ export function deriveWriteTools(graph: OntologyGraph, options: WriteOptions): D
     },
     outputSchema: RESULT_SCHEMA,
     render: (args, value) =>
-      renderResult(value, options.maxRenderedValueLength ?? 120, (type) =>
+      renderResult(value as QueryResult, options.maxRenderedValueLength ?? 120, (type) =>
         graph.schema.objectTypes.get(type)?.primaryKey,
       ),
     execute: (args, call) => {

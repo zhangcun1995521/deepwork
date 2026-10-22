@@ -29,7 +29,7 @@ test('the snapshot reports what the engine found, in the engine\'s own vocabular
 test('with no role map there is no write tool, matching the plugin', () => {
   const snapshot = domainSnapshot(loadGraph(example()), [])
 
-  assert.equal(snapshot.summary.readTools, 4)
+  assert.equal(snapshot.summary.readTools, 5)
   assert.equal(snapshot.summary.writeTools, 0)
   assert.deepEqual(snapshot.tools.write, [])
 })

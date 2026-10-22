@@ -17,7 +17,7 @@
 
 import type { ActionDecl } from '../engine/schema.ts'
 import type { OntologyGraph } from '../engine/graph.ts'
-import { RESULT_SCHEMA, renderResult, type DerivationResult, type JsonSchemaNode, type ToolArgs } from './derive.ts'
+import { RESULT_SCHEMA, renderResult, type DerivationResult, type JsonSchemaNode, type QueryResult, type ToolArgs } from './derive.ts'
 import { writeEntity, type WriteOptions } from './write.ts'
 
 /** Map a declared field onto a JSON Schema node, carrying its description and enum. */
@@ -109,7 +109,7 @@ export function deriveActionTools(graph: OntologyGraph, options: WriteOptions): 
       parameters: { type: 'object', properties, required },
       outputSchema: RESULT_SCHEMA,
       render: (args, value) =>
-        renderResult(value, options.maxRenderedValueLength ?? 120, (name) =>
+        renderResult(value as QueryResult, options.maxRenderedValueLength ?? 120, (name) =>
           graph.schema.objectTypes.get(name)?.primaryKey,
         ),
       execute: (args: ToolArgs, call) => {

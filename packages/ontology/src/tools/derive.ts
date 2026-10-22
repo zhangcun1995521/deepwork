@@ -117,6 +117,18 @@ export interface QueryResult {
    * did not ask for a state. Present so the answer never quietly narrows itself.
    */
   excludedByState?: number
+  /**
+   * Why an empty answer is empty.
+   *
+   * An empty result has three very different causes and they used to read identically: the entity
+   * genuinely has no such relation, the relation has no edges anywhere in this domain, or the id the
+   * caller named is at the wrong end of the relation. Only the first is a fact about the entity; the
+   * other two are facts about the question, and a reader told "nothing matched" without the
+   * difference will write down a gap that does not exist. Measured rather than guessed: an audit
+   * produced by a model against this domain reported five relations as empty that carry 55, 149, 8, 6
+   * and 3 edges, every one of them because the model named the target side as the source.
+   */
+  note?: string
 }
 
 /** Who is asking, as far as the runtime can tell. */
@@ -137,7 +149,7 @@ export interface DerivedToolSpec {
   /** JSON Schema for the canonical return value. */
   outputSchema: JsonSchemaNode
   /** Model-facing prose for a returned value. */
-  render: (args: ToolArgs, value: QueryResult) => string
+  render: (args: ToolArgs, value: ToolValue) => string
   /**
    * Run the tool. Throws for a bad request (unknown type, missing argument) so the
    * runtime reports it as an error; a legitimate "nothing matched" is a successful
@@ -145,8 +157,19 @@ export interface DerivedToolSpec {
    *
    * `call` is optional so a read tool can ignore it entirely.
    */
-  execute: (args: ToolArgs, call?: CallContext) => QueryResult | Promise<QueryResult>
+  execute: (args: ToolArgs, call?: CallContext) => ToolValue | Promise<ToolValue>
 }
+
+/**
+ * What a read tool returns.
+ *
+ * Two shapes rather than one, because they answer different questions: an entity result carries
+ * entities, and the schema result carries declarations. Forcing the schema into the entity envelope
+ * would mean a value with an empty `objects` list and a `total` of zero — an answer that reads as
+ * "nothing matched" to anyone who does not know better, which is the confusion this whole change
+ * exists to remove.
+ */
+export type ToolValue = QueryResult | SchemaResult
 
 /** Everything the derivation produced, plus what it refused to produce and why. */
 export interface DerivationResult {
@@ -273,6 +296,62 @@ function requireRelation(graph: OntologyGraph, relation: string) {
   return declared
 }
 
+/**
+ * Say why a relation walk came back with nothing, when it is not simply "this entity has none".
+ *
+ * Three causes, and only the first is a fact about the entity. The other two are facts about the
+ * question, and an agent that cannot tell them apart writes the second one down as a gap in the
+ * domain — which is how an audit invents work.
+ *
+ * @param graph - The loaded domain.
+ * @param relation - Relation the caller named, already checked to exist.
+ * @param from - Id the caller named as the source.
+ * @param found - How many edges this entity actually has on that relation.
+ * @returns A sentence for an empty answer that needs one, or `undefined` when the answer is plainly
+ *   "this entity has none" and saying so would be noise.
+ */
+function whyEmpty(
+  graph: OntologyGraph,
+  relation: LinkTypeDecl,
+  from: string,
+  found: number,
+): string | undefined {
+  if (found > 0) return undefined
+
+  // An id is scoped to a type, and this argument is not: the caller names an id it saw somewhere. So
+  // the only honest reading of an id is "every entity that has it".
+  const holders = graph.objects.filter((object) => object.id === from)
+  if (holders.length === 0) {
+    return `no entity in this domain has the id "${from}", so nothing was followed`
+  }
+
+  const sourceSide = holders.filter((object) => object.type === relation.from)
+  if (sourceSide.length === 0) {
+    const asked = [...new Set(holders.map((object) => object.type))].join(', ')
+    const targetSide = holders.some((object) => object.type === relation.to)
+    return (
+      `relation "${relation.name}" is ${relation.from} -> ${relation.to}, and "${from}" is a ` +
+      `${asked} — the wrong end of it. ` +
+      (targetSide
+        ? 'That id is on the target side, so this relation cannot be followed from it; find the ' +
+          `${relation.from} that points at it instead.`
+        : `Ask from a ${relation.from} id.`)
+    )
+  }
+
+  const everywhere = graph.links.filter((link) => link.type === relation.name).length
+  if (everywhere === 0) {
+    return (
+      `relation "${relation.name}" has 0 edges anywhere in this domain — the relation is unpopulated ` +
+      'rather than this entity lacking one'
+    )
+  }
+  return (
+    `relation "${relation.name}" has ${everywhere} edge${everywhere === 1 ? '' : 's'} elsewhere in ` +
+    `this domain; this ${relation.from} has none`
+  )
+}
+
 /** Strip graph-internal bookkeeping from an instance. */
 function toResult(object: OntologyObject): ResultObject {
   return { type: object.type, id: object.id, data: object.data }
@@ -356,6 +435,213 @@ export function renderResult(
         'in another state; pass state="*" to include them)',
     )
   }
+  // Last, because it is a caveat on everything above it — and only when there is one, so the
+  // ordinary answer keeps its shape.
+  if (value.note !== undefined) lines.push(`(${value.note})`)
+  return lines.join('\n')
+}
+
+/** One declared type, as the schema tool reports it. */
+export interface SchemaTypeView {
+  name: string
+  primaryKey: string
+  instances: number
+  writtenBy: string[]
+  fields: Array<{
+    name: string
+    type?: string
+    required?: boolean
+    to?: string
+    values?: string[]
+    description?: string
+  }>
+  lifecycle?: {
+    field: string
+    initial: string
+    defaultState?: string
+    states: string[]
+    transitions: Array<{ name: string; from: string[]; to: string; by: string[]; review: boolean }>
+  }
+}
+
+/** One declared relation, with the direction and the edge count the data actually supplies. */
+export interface SchemaRelationView {
+  name: string
+  from: string
+  to: string
+  via: string
+  edges: number
+  cardinality: string
+}
+
+/** The whole declaration, in one answer. */
+export interface SchemaResult {
+  mode: 'schema'
+  types: SchemaTypeView[]
+  relations: SchemaRelationView[]
+  totals: { types: number; relations: number; objects: number; edges: number }
+  unpopulatedRelations: string[]
+  total: number
+  returned: number
+  truncated: boolean
+}
+
+/**
+ * Build the schema answer.
+ *
+ * This exists because a model asked to describe a domain spent a hundred calls guessing at it: the
+ * structural tools answer "one entity" and "one relation from one entity", and nothing answered
+ * "what is declared". The guesses it made in the gap were the wrong ones — it assumed direction from
+ * the relation's name, probed the target side, got an empty result, and reported five populated
+ * relations as empty. A schema it can read first is cheaper than that, and the direction is the
+ * single most load-bearing fact in it.
+ *
+ * `cardinality` is reported as the string `not declared` rather than omitted, because this format
+ * has no cardinality to report. An absent field reads as "the tool forgot"; the words read as "the
+ * domain never said", which is the fact.
+ *
+ * @param graph - The loaded domain.
+ * @param onlyType - Narrow to one type and the relations that touch it, when given.
+ * @param maxResults - Cap on how many types and relations come back.
+ * @returns The schema, with the caps it actually applied.
+ */
+export function buildSchema(
+  graph: OntologyGraph,
+  onlyType: string | undefined,
+  maxResults: number,
+): SchemaResult {
+  const typeNames = [...graph.schema.objectTypes.keys()]
+  const wanted =
+    onlyType === undefined
+      ? typeNames
+      : [requireType(graph, onlyType).name]
+
+  const allTypes: SchemaTypeView[] = wanted.map((name) => {
+    const type = requireType(graph, name)
+    return {
+      name: type.name,
+      primaryKey: type.primaryKey,
+      instances: (graph.byType.get(type.name) ?? []).length,
+      writtenBy: [...type.writtenBy],
+      fields: Object.entries(type.fields).map(([field, decl]) => ({
+        name: field,
+        ...(decl.type === undefined ? {} : { type: String(decl.type) }),
+        ...(decl.required === true ? { required: true } : {}),
+        ...(decl.to === undefined ? {} : { to: String(decl.to) }),
+        ...(Array.isArray(decl.values) ? { values: decl.values.map(String) } : {}),
+        ...(decl.description === undefined ? {} : { description: String(decl.description) }),
+      })),
+      ...(type.lifecycle === undefined
+        ? {}
+        : {
+            lifecycle: {
+              field: type.lifecycle.field,
+              initial: type.lifecycle.initial,
+              ...(type.lifecycle.defaultState === undefined
+                ? {}
+                : { defaultState: type.lifecycle.defaultState }),
+              states: type.lifecycle.states,
+              transitions: type.lifecycle.transitions.map((transition) => ({
+                name: transition.name,
+                from: transition.from,
+                to: transition.to,
+                by: transition.by,
+                review: transition.review !== undefined,
+              })),
+            },
+          }),
+    }
+  })
+
+  const allRelations: SchemaRelationView[] = [...graph.schema.linkTypes.values()]
+    .filter((link) => onlyType === undefined || link.from === onlyType || link.to === onlyType)
+    .map((link) => ({
+      name: link.name,
+      from: link.from,
+      to: link.to,
+      via: link.via ?? link.name,
+      edges: graph.links.filter((candidate) => candidate.type === link.name).length,
+      cardinality: 'not declared',
+    }))
+
+  const unpopulatedRelations = allRelations
+    .filter((relation) => relation.edges === 0)
+    .map((relation) => relation.name)
+
+  const types = allTypes.slice(0, maxResults)
+  const relations = allRelations.slice(0, maxResults)
+  return {
+    mode: 'schema',
+    types,
+    relations,
+    totals: {
+      types: allTypes.length,
+      relations: allRelations.length,
+      objects: graph.objects.length,
+      edges: graph.links.length,
+    },
+    unpopulatedRelations,
+    total: allTypes.length + allRelations.length,
+    returned: types.length + relations.length,
+    truncated: types.length < allTypes.length || relations.length < allRelations.length,
+  }
+}
+
+/** The schema as prose: what a model reads when it asks what the domain declares. */
+export function renderSchema(value: SchemaResult, limit: number): string {
+  const lines: string[] = [
+    `${value.totals.types} object types, ${value.totals.relations} relations, ` +
+      `${value.totals.objects} instances, ${value.totals.edges} edges`,
+  ]
+  for (const type of value.types) {
+    const fields = type.fields
+      .map((field) => {
+        const parts = [field.name]
+        if (field.type !== undefined) parts.push(field.type)
+        if (field.to !== undefined) parts.push(`-> ${field.to}`)
+        if (field.values !== undefined) parts.push(`one of ${field.values.join('|')}`)
+        if (field.required === true) parts.push('required')
+        return parts.join(' ')
+      })
+      .join(', ')
+    lines.push(
+      `${type.name}  pk=${type.primaryKey}  instances=${type.instances}` +
+        `${type.writtenBy.length === 0 ? '' : `  written_by=${type.writtenBy.join(',')}`}`,
+    )
+    if (fields.length > 0) lines.push(`  fields: ${fields}`)
+    if (type.lifecycle !== undefined) {
+      const lifecycle = type.lifecycle
+      const moves = lifecycle.transitions
+        .map(
+          (transition) =>
+            `${transition.name}: ${transition.from.join('|')} -> ${transition.to}` +
+            `${transition.by.length === 0 ? '' : ` by ${transition.by.join(',')}`}` +
+            `${transition.review ? ' (needs review)' : ''}`,
+        )
+        .join('; ')
+      lines.push(
+        `  lifecycle: field=${lifecycle.field} initial=${lifecycle.initial}` +
+          `${lifecycle.defaultState === undefined ? '' : ` default=${lifecycle.defaultState}`} ` +
+          `states=${lifecycle.states.join('|')}`,
+      )
+      if (moves.length > 0) lines.push(`  moves: ${moves.slice(0, limit * 4)}`)
+    }
+  }
+  for (const relation of value.relations) {
+    lines.push(
+      `${relation.name}  ${relation.from} -> ${relation.to}  via=${relation.via}  ` +
+        `edges=${relation.edges}  cardinality=${relation.cardinality}`,
+    )
+  }
+  if (value.unpopulatedRelations.length > 0) {
+    lines.push(
+      `(${value.unpopulatedRelations.length} relation(s) with 0 edges anywhere: ` +
+        `${value.unpopulatedRelations.join(', ')})`,
+    )
+  }
+  if (value.truncated) {
+    lines.push(`(showing ${value.returned} of ${value.total} declarations)`)
+  }
   return lines.join('\n')
 }
 
@@ -421,8 +707,103 @@ export const RESULT_SCHEMA: JsonSchemaNode = {
       type: 'boolean',
       description: 'True when `total` exceeds `returned`; the answer is partial.',
     },
+    note: {
+      type: 'string',
+      description:
+        'Why an empty answer is empty: the entity has none, the relation has no edges anywhere in ' +
+        'this domain, or the id given is the wrong end of the relation. Read it before concluding ' +
+        'that something is missing.',
+    },
   },
   required: ['mode', 'objects', 'links', 'total', 'returned', 'truncated'],
+}
+
+/**
+ * JSON Schema for `ontology_schema`: the declarations themselves.
+ *
+ * Deliberately not the entity schema. A schema answer carries no entities — it carries what the
+ * domain says exists, which relation points where, and how much of each declaration the data
+ * actually fills in.
+ */
+export const SCHEMA_RESULT_SCHEMA: JsonSchemaNode = {
+  type: 'object',
+  properties: {
+    mode: { type: 'string', description: 'Always `schema`.' },
+    types: {
+      type: 'array',
+      description: 'Declared object types, in declaration order.',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          primaryKey: { type: 'string' },
+          instances: { type: 'number' },
+          writtenBy: { type: 'array', items: { type: 'string' } },
+          fields: {
+            type: 'array',
+            description: 'Declared fields: name, type, and the value constraint when one is declared.',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                type: { type: 'string' },
+                required: { type: 'boolean' },
+                to: { type: 'string', description: 'Target type, for a reference field.' },
+                values: { type: 'array', items: { type: 'string' } },
+                description: { type: 'string' },
+              },
+              required: ['name'],
+            },
+          },
+          lifecycle: {
+            type: 'object',
+            description: 'States and the moves between them, when the type declares them.',
+          },
+        },
+        required: ['name', 'primaryKey', 'instances', 'fields'],
+      },
+    },
+    relations: {
+      type: 'array',
+      description: 'Declared relations, with their direction and how many edges the data supplies.',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          from: { type: 'string', description: 'Type on the source side — the end `ontology_links` follows from.' },
+          to: { type: 'string', description: 'Type on the target side.' },
+          via: { type: 'string', description: 'Instance field the edge is derived from.' },
+          edges: { type: 'number' },
+          cardinality: {
+            type: 'string',
+            description:
+              '`not declared` when the domain does not state one — which is the ordinary case here, ' +
+              'and means no viewer or check can enforce a minimum or maximum.',
+          },
+        },
+        required: ['name', 'from', 'to', 'via', 'edges', 'cardinality'],
+      },
+    },
+    totals: {
+      type: 'object',
+      properties: {
+        types: { type: 'number' },
+        relations: { type: 'number' },
+        objects: { type: 'number' },
+        edges: { type: 'number' },
+      },
+      required: ['types', 'relations', 'objects', 'edges'],
+    },
+    unpopulatedRelations: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Declared relations with no edge anywhere in this domain.',
+    },
+    total: { type: 'number' },
+    returned: { type: 'number' },
+    truncated: { type: 'boolean' },
+  },
+  required: ['mode', 'types', 'relations', 'totals', 'unpopulatedRelations', 'total', 'returned', 'truncated'],
 }
 
 /** A string-typed argument node. */
@@ -1080,7 +1461,7 @@ function deriveDispatcher(
     parameters: { type: 'object', properties, required: ['mode'] },
     outputSchema: RESULT_SCHEMA,
     render: (_args, value) =>
-      renderResult(value, renderLimit, (type) => graph.schema.objectTypes.get(type)?.primaryKey),
+      renderResult(value as QueryResult, renderLimit, (type) => graph.schema.objectTypes.get(type)?.primaryKey),
     execute: (args) => {
       const modeName = requireString(args, 'mode')
       const mode = byName.get(modeName)
@@ -1185,6 +1566,31 @@ export function deriveTools(graph: OntologyGraph, options: DeriveOptions = {}): 
 
   const tools: DerivedToolSpec[] = [
     {
+      // First in the list because it is the question a caller asks before it knows which entity to
+      // name: what does this domain declare, and which end of a relation is which. Every other
+      // structural tool assumes an answer this one supplies.
+      name: 'ontology_schema',
+      description:
+        'The declared schema itself: every object type with its fields, lifecycle and instance count, and ' +
+        'every relation with its direction and how many edges the data actually supplies. Call this first ' +
+        'when a question is about the domain as a whole, or before following a relation — it says which ' +
+        'type each relation starts from, and which relations have no data anywhere.',
+      parameters: {
+        type: 'object',
+        properties: {
+          type: stringNode(
+            'Narrow to one object type and the relations that touch it. Omit for the whole domain.',
+            typeNames,
+          ),
+        },
+        required: [],
+      },
+      outputSchema: SCHEMA_RESULT_SCHEMA,
+      render: (_args, value) => renderSchema(value as SchemaResult, renderLimit),
+      execute: (args) => buildSchema(graph, optionalString(args, 'type'), maxResults),
+    },
+
+    {
       name: 'ontology_get',
       description:
         'Fetch one entity from the ontology by its type and id. Returns an empty list when nothing has that id — that is not an error.',
@@ -1197,7 +1603,7 @@ export function deriveTools(graph: OntologyGraph, options: DeriveOptions = {}): 
         required: ['type', 'id'],
       },
       outputSchema: RESULT_SCHEMA,
-      render: (_args, value) => renderResult(value, renderLimit, primaryKeyOf),
+      render: (_args, value) => renderResult(value as QueryResult, renderLimit, primaryKeyOf),
       execute: (args) => {
         const type = requireType(graph, requireString(args, 'type'))
         const id = requireString(args, 'id')
@@ -1227,7 +1633,7 @@ export function deriveTools(graph: OntologyGraph, options: DeriveOptions = {}): 
         required: ['type'],
       },
       outputSchema: RESULT_SCHEMA,
-      render: (_args, value) => renderResult(value, renderLimit, primaryKeyOf),
+      render: (_args, value) => renderResult(value as QueryResult, renderLimit, primaryKeyOf),
       execute: (args) => {
         const type = requireType(graph, requireString(args, 'type'))
         const field = optionalString(args, 'field')
@@ -1278,7 +1684,11 @@ export function deriveTools(graph: OntologyGraph, options: DeriveOptions = {}): 
     {
       name: 'ontology_links',
       description:
-        'Follow a declared relation from one entity and return what it points at, along with the relation instances themselves.',
+        'Follow a declared relation from one entity and return what it points at, along with the relation ' +
+        'instances themselves. A relation has a direction: ask from the type on its `from` side (ontology_schema ' +
+        'lists both ends and how many edges each relation actually has). An empty answer carries a `note` ' +
+        'saying whether the entity has none, the relation is empty in the whole domain, or the id named is ' +
+        'the wrong end.',
       parameters: {
         type: 'object',
         properties: {
@@ -1288,7 +1698,7 @@ export function deriveTools(graph: OntologyGraph, options: DeriveOptions = {}): 
         required: ['relation', 'from'],
       },
       outputSchema: RESULT_SCHEMA,
-      render: (_args, value) => renderResult(value, renderLimit, primaryKeyOf),
+      render: (_args, value) => renderResult(value as QueryResult, renderLimit, primaryKeyOf),
       execute: (args) => {
         const relation = requireRelation(graph, requireString(args, 'relation'))
         const from = requireString(args, 'from')
@@ -1300,7 +1710,9 @@ export function deriveTools(graph: OntologyGraph, options: DeriveOptions = {}): 
           const target = graph.byId.get(`${link.toType}:${link.to}`)
           if (target !== undefined) targets.push(target)
         }
-        return pack('links', targets, links, maxResults)
+        const result = pack('links', targets, links, maxResults)
+        const note = whyEmpty(graph, relation, from, links.length)
+        return note === undefined ? result : { ...result, note }
       },
     },
   ]

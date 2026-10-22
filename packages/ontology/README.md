@@ -44,22 +44,35 @@ DEEPWORK_ONTOLOGY_ROOT=/path/to/domain dsh web
 
 ## The tool surface
 
-Four tools, and **only one grows with the domain**:
+Five tools, and **only one grows with the domain**:
 
 | Tool | Arguments | What it does |
 |---|---|---|
+| `ontology_schema` | `type?` | the declarations themselves: types, fields, lifecycles, relations with direction and edge counts |
 | `ontology_get` | `type`, `id` | fetch one entity |
 | `ontology_find` | `type`, `field?`, `value?`, `query?` | find entities by exact field and/or substring |
 | `ontology_links` | `relation`, `from` | follow a declared relation |
 | `ontology_query` | `mode`, plus declared arguments | run the domain's own declared functions |
 
-The first three are parameterized *by* type rather than duplicated *per* type, so a
-domain with forty entities still exposes three tools. `type` and `relation` are closed
+The structural four are parameterized *by* type rather than duplicated *per* type, so a
+domain with forty entities still exposes four tools. `type` and `relation` are closed
 enums built from the schema, so the model cannot name something that does not exist.
 Only `ontology_query`'s `mode` enum grows, and an enum value costs far less than a tool
 whose description crowds out the task.
 
-A fourth tool appears when you say who may write:
+**`ontology_schema` exists because a model asked to describe a domain without it guesses.** The
+other three answer "one entity" and "one relation from one entity", so nothing answered "what is
+declared" — and the guesses made in that gap were the wrong ones: direction taken from a relation's
+name, the target side probed as the source, the empty result written down as an unpopulated
+relation. Measured on a real domain, an audit built that way reported five relations as empty that
+carry 55, 149, 8, 6 and 3 edges. With the schema available the same question took one call, twelve
+seconds, and got all twelve empty relations and no false ones.
+
+An empty `ontology_links` answer now carries a `note` saying which kind of empty it is: the entity
+has none, the relation has none anywhere in the domain, or the id named is the wrong end of a
+directed relation. Only the first is a fact about the entity.
+
+A fifth tool appears when you say who may write:
 
 | Tool | Arguments | What it does |
 |---|---|---|

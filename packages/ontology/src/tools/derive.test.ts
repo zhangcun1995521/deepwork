@@ -26,23 +26,23 @@ function run(tool: DerivedToolSpec, args: ToolArgs) {
   return tool.execute(args)
 }
 
-test('the surface is four tools, and only the dispatcher grows with the domain', () => {
+test('the surface is five tools, and only the dispatcher grows with the domain', () => {
   const { tools, warnings } = deriveTools(loadGraph(fixture('project-delivery')))
 
   assert.deepEqual(warnings, [])
   assert.deepEqual(
     tools.map((tool) => tool.name),
-    ['ontology_get', 'ontology_find', 'ontology_links', 'ontology_query'],
+    ['ontology_schema', 'ontology_get', 'ontology_find', 'ontology_links', 'ontology_query'],
   )
 })
 
-test('a domain declaring no functions gets the structural three, and no dispatcher', () => {
+test('a domain declaring no functions gets the structural four, and no dispatcher', () => {
   const { tools, warnings } = deriveTools(loadGraph(fixture('debug')))
 
   assert.deepEqual(warnings, [])
   assert.deepEqual(
     tools.map((tool) => tool.name),
-    ['ontology_get', 'ontology_find', 'ontology_links'],
+    ['ontology_schema', 'ontology_get', 'ontology_find', 'ontology_links'],
   )
 })
 
@@ -640,3 +640,96 @@ test('a relation declaring prose semantics is warned about, not silently ignored
   assert.equal(graph.schema.linkTypes.get('reports_to')?.semanticsTag, undefined)
 })
 
+
+test('ontology_schema answers what is declared: direction, edge counts, and what has none', () => {
+  const { tools } = deriveTools(loadGraph(fixture('project-delivery')))
+  const schema = run(toolNamed(tools, 'ontology_schema'), {}) as {
+    types: Array<{ name: string; instances: number; fields: Array<{ name: string }> }>
+    relations: Array<{ name: string; from: string; to: string; via: string; edges: number; cardinality: string }>
+    totals: { types: number; relations: number; objects: number; edges: number }
+    unpopulatedRelations: string[]
+    truncated: boolean
+  }
+
+  // Every type, with its instance count and its declared fields — the facts a caller needs before it
+  // can name anything.
+  assert.equal(schema.types.length, schema.totals.types)
+  const project = schema.types.find((type) => type.name === 'Project')
+  assert.ok(project !== undefined)
+  assert.ok(project.fields.some((field) => field.name === 'customer'))
+
+  // Direction is the load-bearing fact: it is what a caller gets wrong, and what an empty answer
+  // used to conceal.
+  const belongs = schema.relations.find((relation) => relation.name === 'belongs_to')
+  assert.deepEqual(
+    { from: belongs?.from, to: belongs?.to, via: belongs?.via },
+    { from: 'Project', to: 'Customer', via: 'customer' },
+  )
+  assert.equal(belongs?.edges, 2)
+
+  // This format has no cardinality, and the answer says so in words rather than leaving the field
+  // out — an absent field reads as an oversight, the words read as a fact about the domain.
+  assert.equal(belongs?.cardinality, 'not declared')
+
+  assert.equal(schema.truncated, false)
+})
+
+test('ontology_schema lists the relations nothing has wired, and says so once', () => {
+  // The topology fixture carries both cases on purpose: `depends_on` is populated and `reports_to`
+  // is declared with no instance to wire it.
+  const { tools } = deriveTools(loadGraph(fixture('topology')))
+  const schema = run(toolNamed(tools, 'ontology_schema'), {}) as {
+    relations: Array<{ name: string; edges: number }>
+    unpopulatedRelations: string[]
+  }
+
+  const populated = schema.relations.find((relation) => relation.name === 'depends_on')
+  assert.equal(populated?.edges, 7)
+  // Listed here once, instead of being discovered by probing each relation's ends and mistaking
+  // "I looked in the wrong place" for "there is nothing".
+  assert.deepEqual(schema.unpopulatedRelations, ['reports_to', 'escalates_to'])
+})
+
+test('an empty relation walk says which kind of empty it is', () => {
+  const { tools } = deriveTools(loadGraph(fixture('project-delivery')))
+  const links = toolNamed(tools, 'ontology_links')
+  const run1 = (relation: string, from: string) =>
+    run(links, { relation, from }) as { total: number; note?: string }
+
+  // Wrong end: `belongs_to` is Project -> Customer, and CUST-ACME is a Customer. The answer must not
+  // read as "this customer has no such relation" — it is a fact about the question.
+  const wrongEnd = run1('belongs_to', 'CUST-ACME')
+  assert.equal(wrongEnd.total, 0)
+  assert.match(wrongEnd.note ?? '', /Project -> Customer/)
+  assert.match(wrongEnd.note ?? '', /wrong end/)
+  assert.match(wrongEnd.note ?? '', /target side/)
+
+  // An id no entity carries: nothing was followed, which is different from "it has none".
+  const unknown = run1('belongs_to', 'PRJ-NOPE')
+  assert.equal(unknown.total, 0)
+  assert.match(unknown.note ?? '', /no entity in this domain has the id/)
+
+  // And a walk that does find something carries no note at all: the caveat only appears where there
+  // is an empty answer to explain.
+  const found = run1('belongs_to', 'P-001')
+  assert.ok(found.total > 0)
+  assert.equal(found.note, undefined)
+})
+
+test('a relation nothing wired is distinguished from a route the entity lacks', () => {
+  // Same tool, the topology fixture, where the two empties sit next to each other: `depends_on` is
+  // populated and SVC-7 has none, while `reports_to` is populated nowhere at all.
+  const { tools } = deriveTools(loadGraph(fixture('topology')))
+  const links = toolNamed(tools, 'ontology_links')
+  const run1 = (relation: string, from: string) =>
+    run(links, { relation, from }) as { total: number; note?: string }
+
+  const noneHere = run1('depends_on', 'SVC-7')
+  assert.equal(noneHere.total, 0)
+  assert.match(noneHere.note ?? '', /has 7 edges elsewhere in this domain/)
+  assert.match(noneHere.note ?? '', /this Service has none/)
+
+  const unpopulated = run1('reports_to', 'SVC-1')
+  assert.equal(unpopulated.total, 0)
+  assert.match(unpopulated.note ?? '', /0 edges anywhere in this domain/)
+})

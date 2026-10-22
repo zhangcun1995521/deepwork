@@ -635,7 +635,7 @@ test('a system outside the deployment is an object type like any other', (t) => 
   // is the whole reason a domain can describe the enterprise without the engine learning it.
   assert.deepEqual(
     tools.map((spec) => spec.name),
-    ['ontology_get', 'ontology_find', 'ontology_links', 'ontology_query'],
+    ['ontology_schema', 'ontology_get', 'ontology_find', 'ontology_links', 'ontology_query'],
   )
   const find = tool(tools, 'ontology_find')
   assert.ok(find.parameters.properties?.type?.enum?.includes('OutsideSystem'))
