@@ -1,0 +1,17 @@
+# The composition layer this bundle contributes.
+#
+# `root` is one repository and has to be named: a capability that picked a repository by itself would
+# be one nobody reviewed. Empty means no tool is registered at all.
+
+- insert:
+    - id: deepwork-git
+      name: '@zhangcun123/git'
+      config:
+        root: !!js 'process.env.DEEPWORK_GIT_ROOT ?? ""'
+        # Off unless the deployment says otherwise. A capability that can publish the moment it is
+        # installed is one whose default has to be "no" — and turning it on is a line somebody reviews.
+        allowPush: !!js 'process.env.DEEPWORK_GIT_ALLOW_PUSH === "on"'
+        # A change larger than this is refused rather than published: too big to read is too big to
+        # review. The limit fails closed — an unmeasurable change is refused, not counted as zero.
+        maxDiffLines: !!js 'process.env.DEEPWORK_GIT_MAX_DIFF ? Number(process.env.DEEPWORK_GIT_MAX_DIFF) : 400'
+        timeoutMs: !!js 'process.env.DEEPWORK_GIT_TIMEOUT ? Number(process.env.DEEPWORK_GIT_TIMEOUT) : 60000'
