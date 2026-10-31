@@ -131,7 +131,7 @@ node packages/ontology/scripts/show-derivation.ts packages/ontology/examples/eng
 ```
 
 The second command prints what came out of the declaration — and note what it prints with no
-roles configured: three read tools, no write tool, and no actions derived, because an
+roles configured: four read tools, no write tool, and no actions derived, because an
 unconfigured deployment is a read-only one.
 
 Then `packages/ontology/src/examples.test.ts` runs it for real — a stage cannot be entered
@@ -218,7 +218,8 @@ node packages/ontology/scripts/show-derivation.ts packages/ontology/examples/pro
 domain   packages/ontology/examples/project-delivery
          5 object types, 16 instances, 6 relations (22 edges)
 
-tools    4 read, 0 write
+tools    5 read, 0 write
+         ontology_schema
          ontology_get
          ontology_find
          ontology_links
@@ -242,7 +243,8 @@ node packages/ontology/scripts/show-derivation.ts packages/ontology/tests/fixtur
 ```
 
 ```
-tools    3 read, 1 write
+tools    4 read, 1 write
+         ontology_schema
          ontology_get
          ontology_find
          ontology_links
@@ -257,7 +259,7 @@ objects
 
 That second run is a governance model in fifteen lines, and not one of them was written by
 hand: it is the domain, read back. The enforcement behind those lines is described under
-[Governance](#governance) and checked by 393 tests.
+[Governance](#governance) and checked by 480 tests.
 
 ## What it looks like when an agent uses it
 
@@ -285,14 +287,17 @@ Working and demonstrated, not finished.
 | Declared review — a move that needs an independent verdict | ✅ enforced against provenance the platform recorded; a promotion went through on another session's verdict and was refused without one |
 | Declared value sets — a field's `values` as a closed set, not a hint | ✅ a value outside it is refused with `value-not-declared`, through the generic write tool and through a declared action |
 | Declared-domain validation — an exit code a pipeline can read | ✅ a sound domain passes, a malformed one fails naming the declaration that was dropped |
-| Example domains — five of them, one mechanism each | ✅ end to end; the fifth describes the systems outside the deployment, and is the first to declare a `tool_grants` entry |
-| Capability layer — a second plugin that adds an ability | ✅ three packages: a project's tests, a language server, and the lineage around a session; two declare what they touch, and the third is a read that declares nothing |
+| Example domains — six of them, one mechanism each | ✅ end to end; the fifth describes the systems outside the deployment, and is the first to declare a `tool_grants` entry |
+| Capability layer — a second plugin that adds an ability | ✅ six packages: a project's tests, a language server, the lineage around a session, an outside system reached by a declared route, this machine's windows, and a repository split by risk. Each declares what it touches; the guard judges them like any other capability |
 | Mode role — who a mode's agents are, and the prompt they work under | ✅ its own package; it registers no tool, and the role it publishes is the one filter the rules block applies |
+| Declared schema, readable — `ontology_schema` | ✅ the fourth structural tool: a domain's types, fields, lifecycles and relations with their direction and their edge count. Measured: the same question took one call and 12 seconds instead of 100 calls, 144 seconds and five false "empty" answers |
+| Projection out — a domain as RDF | ✅ `export-rdf.ts` emits OWL any viewer reads; the file carries what it cannot show (no cardinality, no kind/role/phase/relator) rather than letting a picture of it look complete |
+| Connector view — a page for what a deployment can reach | ✅ `/connectors` plus `POST /connectors/reach`: two counts (`complete`, `callable`), findings separate from per-route problems, the address never served, and a page-initiated call that keeps every check and records `by: 'panel'` in the trail |
 | Architecture — the route written down | ✅ `docs/architecture.md`, with each limit named beside the file that states it |
 | Workspace UI | ✅ a page inside DSH's own interface, not a second server |
 | Published to npm | prepared, not published |
 
-393 tests in total.
+480 tests in total.
 
 The engine and every derivation are testable without a runtime, an API key, or an agent,
 because the package depends on nothing from DSH. That is why the test suite runs in under
@@ -437,6 +442,7 @@ domain was put through. `packages/ontology/tests/fixtures/ahead-of-its-data` now
 | `packages/test-runner` | a capability: run a project's tests and read what the run said (see its README) |
 | `packages/external` | a capability: reach a system the domain declares, by running the program the deployment configured, with the credential out of the host's seam and every attempt in the trail (see its README) |
 | `packages/session-query` | a capability the host does not ship yet: the lineage around one session, so an agent can pick up what another started |
+| `packages/git` | a capability: operate one repository, split into three tools by what a mistake would cost — read, change, publish — with force push, hard reset, clean, rebase and history rewriting absent rather than forbidden. Pushing is off unless the deployment turns it on, and the trunk is never pushed |
 | `packages/lsp` | the same kind of stand-in: ask a language server where something is defined, instead of guessing from a text match |
 | `packages/computer` | a capability: look at this machine's windows and elements and act on them — with the window scope a deployment names, a guard grant per program and per verb, and one approval per session rather than one per click |
 | `packages/role` | not a capability: the role a mode acts as and the prompt file it works under, registering nothing and stating the role to nobody but its own agents — which role a deployment acts as is the `situation` tag the ontology selects rules by |

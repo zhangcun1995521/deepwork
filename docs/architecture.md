@@ -97,9 +97,11 @@ function. What they have instead is a surface, and the shape of that surface is 
 
 - a declared function becomes a **mode** of one tool, `ontology_query`. The tool count is fixed and
   the vocabulary is data, so adding a question to a domain adds no tool. A domain that declares no
-  function at all still gets the three undeclared read tools — `ontology_get`, `ontology_find`,
-  `ontology_links` — which exist precisely so that a world with no queries declared is still
-  readable.
+  function at all still gets the four undeclared read tools — `ontology_schema`, `ontology_get`,
+  `ontology_find`, `ontology_links` — which exist precisely so that a world with no queries declared
+  is still readable. `ontology_schema` is the fourth and the newest: without it a caller asked to
+  describe a domain has no tool that answers "what is declared", and fills the gap by guessing at
+  relation directions — measured, that produced five populated relations reported as empty.
 - a declared action becomes **a tool of its own**, alongside the generic write tool. Neither of them is
   declared to the governance channel, and that is deliberate: an action's authority is the *write
   path*, which knows the object type, the caller, the current state and whether a second pair of eyes
@@ -626,7 +628,7 @@ branch. None of them is smoothed over above.
 | `packages/ontology/src/tools/register.ts` | the bridge to the host's registry, and the no-dependency rule |
 | `packages/ontology/examples/agreed-practice` | the domain that exercises the situation, and the pure state move |
 | `packages/ontology/examples/outside-systems` | the domain that holds the systems outside the deployment, and the only shipped one to declare `tool_grants` |
-| `packages/test-runner`, `packages/lsp`, `packages/session-query` | three capabilities: two declare what they touch, and one is a read that declares nothing |
+| `packages/test-runner`, `packages/lsp`, `packages/session-query`, `packages/external`, `packages/computer`, `packages/git` | six capabilities. Each declares what it touches to the governance channel; the ones that reach outside the machine also go through an approval gate, and `packages/git` splits its actions across three tools so that reading, changing and publishing have separate authority |
 | `packages/role` | a mode's role and the prompt it works under — not a capability, and it registers no tool |
 | `packages/ontology/cordis.patch.yml` | one bundle's composition layer; every package here carries one beside it |
 

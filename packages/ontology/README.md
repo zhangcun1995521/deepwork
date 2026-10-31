@@ -55,7 +55,7 @@ Five tools, and **only one grows with the domain**:
 | `ontology_query` | `mode`, plus declared arguments | run the domain's own declared functions |
 
 The structural four are parameterized *by* type rather than duplicated *per* type, so a
-domain with forty entities still exposes four tools. `type` and `relation` are closed
+domain with forty entities still exposes four of them. `type` and `relation` are closed
 enums built from the schema, so the model cannot name something that does not exist.
 Only `ontology_query`'s `mode` enum grows, and an enum value costs far less than a tool
 whose description crowds out the task.

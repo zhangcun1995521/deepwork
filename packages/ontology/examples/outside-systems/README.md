@@ -59,7 +59,8 @@ node packages/ontology/scripts/show-derivation.ts packages/ontology/examples/out
 domain   packages/ontology/examples/outside-systems
          3 object types, 8 instances, 2 relations (6 edges)
 
-tools    4 read, 1 write
+tools    5 read, 1 write
+         ontology_schema
          ontology_get
          ontology_find
          ontology_links

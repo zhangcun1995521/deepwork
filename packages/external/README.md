@@ -136,9 +136,30 @@ to zero, so the summary cannot claim a capability the guard would refuse.
 
 **What it never shows.** Not the address — only the field's name and whether it is filled. Not the
 credential — the name is shown, because it is what a domain declares and what an operator looks up,
-and the material is never asked for. And not a "test this route" button: reaching a system is an agent
-act behind an approval gate, and a page has no agent identity to ask on behalf of. The view says who
-to ask instead — an agent calling `reach_system`.
+and the material is never asked for.
+
+## Reaching from the page
+
+`POST /connectors/reach` with `{"route_id": "CP-DEMO-001"}` dials that route on behalf of the person
+who pressed the button. It gives up exactly one thing and keeps everything else:
+
+- **Nobody is asked.** The reader *is* the principal — the session cookie is how the host authenticated
+  them — so the button they pressed is the answer. Asking an approval service on behalf of an agent
+  that is not running would either fail closed for no reason or invent an identity.
+- **Every other check stays.** The same route resolution, the same lifecycle boundary, the same
+  credential seam, the same command quoting. Those are the route's declaration, not the caller's
+  permission.
+- **`tool_grants` is read first**, and a program granted to nobody is a 403. A page that skipped it
+  would be strictly more powerful than the agent, which is the inversion this design exists to prevent.
+- **The trail says `by: 'panel'`.** Without that field, "an agent reached the payroll system unattended"
+  and "an operator tested it" would read identically afterwards, which is the one thing a trail is for.
+- **It still cannot say which person.** The web session seam hands this plugin no identity, so the trail
+  records that it was the page. Recording a guess would be worse than recording the page.
+
+A refusal carries its reason code on the error as well as in the trail, because the page has to name the
+check that refused without re-deriving it from prose. An error without a reason is a 500 rather than a
+403: a program that would not start is not a permission story.
+
 
 A route marked complete has a complete declaration, not a known answer: whether the credential is
 stored under that name and whether the program exists here are facts only a call settles.
